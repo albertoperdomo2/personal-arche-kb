@@ -32,6 +32,11 @@ Machine API showed `Phase: Running` (stale cache), but IBM Cloud API reported in
 - **12:15 UTC** — Instance transitions back to `failed` with error: `cannot_start_capacity — Can't start instance because resource capacity is unavailable.`
 - **12:21 UTC** — Second stop/start cycle attempted. Same result: `failed` with `cannot_start_capacity`.
 
+### 2026-07-18 retry
+- **09:38 UTC** — Third stop/start cycle attempted. Instance stopped successfully, then `instance-start` issued. Instance entered `starting` state with no immediate error (unlike previous day's instant rejections).
+- **~09:42 UTC** — Instance still in `starting` state after ~4 minutes — appeared promising.
+- **~09:44 UTC** — Instance transitioned back to `failed` with `cannot_start_capacity`. H100 capacity in `eu-de-2` still unavailable after ~26 hours.
+
 ## Root Cause
 The IBM Cloud VPC instance entered a `failed` state at the hypervisor level. The exact cause of the initial failure is unknown (could be hardware fault, hypervisor issue, or resource exhaustion on the host).
 
@@ -40,7 +45,7 @@ When attempting to restart, IBM Cloud returned `cannot_start_capacity`: there is
 The OCP Machine API cached the instance status as `running` and did not detect the failure — no `MachineHealthCheck` is configured for the GPU worker MachineSet.
 
 ## Resolution
-**UNRESOLVED** as of 2026-07-17 12:21 UTC. The instance cannot start due to capacity constraints in `eu-de-2`.
+**UNRESOLVED** as of 2026-07-18 09:44 UTC. Three stop/start cycles across two days have all failed with `cannot_start_capacity`.
 
 Options:
 1. **Retry periodically** — H100 capacity may free up. Run: `ibmcloud is instance-start 02c7_e6e3837b-a31c-416a-a16e-01b35e0cf37f`
