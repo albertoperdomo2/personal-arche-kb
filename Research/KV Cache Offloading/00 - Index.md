@@ -6,7 +6,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Status
 
-**Active.** The first post-fix vLLM 0.24 four-way batch is clean enough for performance analysis: all EPP/model pods stayed Ready with zero restarts. CPU32 creates a reproducible large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, and lack of repeated runs. The original rerun unknowingly used vLLM 0.23.0 and crashed model workers. The 2026-07-18/19 rerun correctly used vLLM 0.24.0 and eliminated model-worker crashes, but EPP v0.9.0 now CrashLoops on offloading KV events because of a known empty-slice indexing bug.
+**Active.** The first post-fix vLLM 0.24 four-way batch is clean enough for performance analysis: all EPP/model pods stayed Ready with zero restarts. In this accepted batch, CPU32 creates a large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, and lack of repeated runs.
 
 ## Current working conclusion
 
