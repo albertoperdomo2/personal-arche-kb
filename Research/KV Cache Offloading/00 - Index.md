@@ -6,29 +6,28 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Status
 
-**Active.** The experiment is correctly sized at `U=0.64`, CPU32, concurrency 128, and seed 42, but a clean publishable paired triplet is still blocked on component compatibility. The original rerun unknowingly used vLLM 0.23.0 and crashed model workers. The 2026-07-18/19 rerun correctly used vLLM 0.24.0 and eliminated model-worker crashes, but EPP v0.9.0 now CrashLoops on offloading KV events because of a known empty-slice indexing bug.
+**Active.** The first post-fix vLLM 0.24 four-way batch is clean enough for performance analysis: all EPP/model pods stayed Ready with zero restarts. CPU32 creates a reproducible large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, and lack of repeated runs. The original rerun unknowingly used vLLM 0.23.0 and crashed model workers. The 2026-07-18/19 rerun correctly used vLLM 0.24.0 and eliminated model-worker crashes, but EPP v0.9.0 now CrashLoops on offloading KV events because of a known empty-slice indexing bug.
 
 ## Current working conclusion
 
-- Keep `gpu-memory-utilization=0.64`, CPU32, concurrency 128, and seed 42 until reliability is clean. The earlier controlled triplet already produced the intended cache-reuse and performance staircase.
-- The requested vLLM 0.24.0 image now deploys correctly: run plan, rendered Deployment, pod manifest, and startup logs all agree.
-- vLLM 0.24.0 keeps all offloading model workers alive; the earlier v0.23 EngineCore crash is gone in this batch.
-- The new offloading-run failures come from **EPP v0.9.0**, not vLLM workers, workload saturation, CPU memory, or NVMe.
-- In both CPU and CPU+NVMe, both EPP replicas restarted 10 times and ended in `CrashLoopBackOff`.
-- Exact panic: `runtime error: index out of range [0] with length 0` in `llm-d-kv-cache/pkg/kvcache/kvblock.(*InMemoryIndex).Add`, called from `kvevents.(*Pool).processEventBatch`.
-- EPP v0.9.0 receives an offloading event with an empty-but-non-nil engine-key slice and one request key, checks only `engineKeys != nil`, and indexes element zero.
-- The missing empty-slice guard was fixed after v0.9.0 in llm-d-kv-cache PR #670 / commit `c4e7265938985c455b177940815a99491f218ff6`, and is already in current llm-d-router source.
-- EPP restarts sever active chunked streams (client `TransferEncodingError`) and make new requests return empty HTTP 500s. The wall-clock match between EPP exits and synchronized error bursts is exact.
-- CPU had 729 failures (7.85%); CPU+NVMe had 699 (5.93%). Both are rejected for performance comparison.
-- Model memory failures and CPU throttling are zero. GPU KV usage is not sustained at 100%. CPU-only reproduces the EPP panic, ruling out NVMe as the cause.
-- NVMe was active at approximately 8.17 GB/s aggregate reads and 1.45 GB/s writes; the two node devices averaged about 78% and 81% busy.
-- Replace EPP v0.9.0 with an immutable image built after the empty-slice fix, smoke-test CPU and NVMe unchanged, then rerun the paired batch.
+- The fixed EPP image (digest `sha256:138d54c72f132da48574c6254d7d85d71e7d0186f9fdee6f31a46cc88e319234`, build commit `b41827163b35fa03460f4deecf2cc68bdc60c1a6`) eliminates the v0.9.0 offload-event CrashLoop: every EPP/model pod has zero restarts and no panic.
+- The accepted performance staircase is approximate 5.461 req/s, precise no-offload 5.611, CPU32 6.529, and CPU32+NVMe 6.546.
+- CPU32 versus precise no-offload improves request throughput 16.36%, mean TTFT 52.47%, and mean E2E latency 32.09%.
+- NVMe versus CPU32 improves request throughput only 0.26%, but improves mean TTFT 6.04%, p95 TTFT 24.29%, and mean E2E latency 5.08%.
+- Prompt-token reuse is 47.28% approximate, 51.51% precise no-offload, 85.71% CPU32, and 90.65% CPU32+NVMe. CPU32 already captures most useful reuse, leaving diminishing headroom for NVMe.
+- NVMe is active, not starved: about 2.05 TB read and 2.04 TB written in 30 minutes at roughly 1.14 GB/s each direction. Device busy averages 24–29% per node and peaks below 35%, arguing against SSD saturation.
+- Precise routing pays a large synchronous render/tokenization tax: roughly 139–149 ms p50 EPP dispatch versus 10.6 ms approximate, with 4–5 second p99/max outliers and 21–26 render timeouts.
+- The renderer is three `vllm-openai-cpu:v0.23.0` pods requesting one CPU each, while the backend is v0.24.0. Align versions, reserve more CPU/replicas, instrument it, and eliminate timeouts.
+- NVMe alone logs 1,116 missing-parent errors across 319 unique engine keys. Router `pkg/kvevents/pool.go` skips those complete `BlockStored` events, making the precise NVMe index incomplete; fix this before final CPU-versus-NVMe claims.
+- For a wider tier gap, keep U=0.64 first, reduce CPU capacity equally to 16 GiB/replica in CPU-only and CPU+NVMe, then sweep concurrency 128/192/256. Test lower GPU memory only after that.
+- Repeat every selected point at least three times. The current 0.26% NVMe RPS delta is below single-run resolution, while its p95 latency improvement is promising but unreplicated.
 
 ## Documents
 
 - [[2026-07-17 - Initial AgentX offloading tier analysis]] — reconstruction of the initial report/MLflow deep dive and proposed clean experiment.
 - [[2026-07-18 - U0.64 paired-seed AgentX rerun analysis]] — controlled precise triplet, performance/cache staircase, vLLM 0.23 worker-crash isolation, EPP findings, and the Benchflow image-override bug.
 - [[2026-07-19 - vLLM 0.24 offload EPP CrashLoop analysis]] — actual vLLM 0.24 rerun; exact EPP v0.9 empty-engine-key panic, request-error chain, saturation exclusion, and fix/validation plan.
+- [[2026-07-19 - vLLM 0.24 fixed-EPP clean rerun analysis]] — clean post-fix four-way comparison with Vega-Lite figures, cache-source accounting, NVMe traffic, renderer latency, router-index caveat, and next experiment matrix.
 
 ## Source report and artifacts
 
@@ -37,7 +36,9 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 - v0.23 controlled rerun artifacts: `/private/tmp/kv-cache-experiments/rerun-2026-07-18/`
 - v0.24 rerun artifacts: `/private/tmp/kv-cache-experiments/v024-rerun-2026-07-19/`
 - v0.24 detailed local report: `/private/tmp/kv-cache-experiments/v024-rerun-failure-analysis.md`
-- Analysis helpers: `/private/tmp/kv-cache-experiments/analyze_rerun.py` and `analyze_v024_rerun.py`
+- Fixed-EPP rerun artifacts: `/private/tmp/kv-cache-experiments/v024-epp-fix-rerun-2026-07-19/`
+- Fixed-EPP Vega-Lite report: `/private/tmp/kv-cache-experiments/v024-epp-fixed-rerun-analysis.md`
+- Analysis helpers: `/private/tmp/kv-cache-experiments/analyze_rerun.py`, `analyze_v024_rerun.py`, and `analyze_v024_epp_fix_rerun.py`
 - Methodology reference: [KV-cache offloading experiments and math](https://www.albertoperdomo.me/posts/kv-cache-offloading-experiments-math)
 
 ## Initial MLflow run registry
@@ -67,14 +68,23 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 | Precise, CPU 32 GiB | `d55f0a79f89d493fbf2652cefedab382` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d55f0a79f89d493fbf2652cefedab382?workspace=benchflow) | Reject: 729 errors; each EPP restarted 10 times |
 | Precise, CPU 32 GiB + NVMe | `2857520dd3dd4762b0b241a4dfdbaafd` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/2857520dd3dd4762b0b241a4dfdbaafd?workspace=benchflow) | Reject: 699 errors; each EPP restarted 10 times |
 
+## vLLM 0.24 + fixed-EPP clean rerun registry
+
+| Variant | Run ID | Link | Disposition |
+|---|---|---|---|
+| Optimized approximate baseline | `e6f54f37a63549cbb4feaa1b4dd78c00` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/e6f54f37a63549cbb4feaa1b4dd78c00?workspace=benchflow) | Accept; zero restarts, one isolated HTTP 503 |
+| Precise, no offload | `186e43cb9b4a4a7e82c3bca930a5cb35` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/186e43cb9b4a4a7e82c3bca930a5cb35?workspace=benchflow) | Accept; zero errors and zero restarts |
+| Precise, CPU 32 GiB | `49e9185c2a5f4cc4951dfec020d67bd9` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/49e9185c2a5f4cc4951dfec020d67bd9?workspace=benchflow) | Accept; 16.36% RPS over no-offload, one isolated HTTP 503 |
+| Precise, CPU 32 GiB + NVMe | `d37d113709e5426f92a3b1ac271c9c92` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d37d113709e5426f92a3b1ac271c9c92?workspace=benchflow) | Accept with router-index caveat; active NVMe, one isolated HTTP 503 |
+
 ## Immediate next work
 
-1. Override `spec.overrides.images.scheduler` with an EPP image built after commit `c4e7265938985c455b177940815a99491f218ff6`.
-2. Use `:main` only for a short validation; pin a verified immutable digest for final experiments.
-3. Keep vLLM 0.24.0, U=0.64, CPU32, concurrency 128, seed 42, and topology unchanged.
-4. Run a 5–10 minute CPU32 smoke test and require zero EPP/model restart delta and zero request errors.
-5. Repeat the smoke test with CPU32+NVMe.
-6. Add a Benchflow pre-profile gate for EPP/model readiness and restart deltas; save current and previous logs.
-7. Rerun the full four-way batch only after both smoke tests pass.
-8. Then run three to five paired seeds and resume performance-gap analysis.
-9. Separately fix EPP SSE comment parsing noise, parent-event/index loss, and explicit tier weights.
+1. Pin the verified fixed EPP digest and keep vLLM 0.24.0.
+2. Align render pods to vLLM 0.24.0, reserve more CPU, scale/balance them, and capture render CPU/request-latency telemetry.
+3. Require zero precise tokenization timeouts.
+4. Diagnose/fix NVMe missing-parent event ordering or make the index recover instead of dropping the complete `BlockStored` event.
+5. Repeat the current U0.64/CPU32/concurrency-128 point at least three times to estimate variance.
+6. Run paired CPU16 and CPU16+NVMe at concurrency 128, then 192 and 256.
+7. Select the point where CPU-only recomputation is 20–35% and NVMe recomputation is below 10–15%, without sustained queue/storage saturation.
+8. Only then add a U0.56 sensitivity point.
+9. Keep the realistic AgentX trace as primary; optionally add a shorter-output cache-sensitive agentic profile to expose throughput rather than decode dominance.
