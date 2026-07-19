@@ -16,20 +16,24 @@ The offloading mechanism is visible in both prompt-token source metrics and late
 
 ## Source runs
 
-| Variant | Run ID | MLflow |
-|---|---|---|
-| Optimized baseline | `6ef87d95297842548d7c36eb02f3fcdf` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/6ef87d95297842548d7c36eb02f3fcdf?workspace=benchflow) |
-| Precise, no offload | `b3d0fd333acb4b27b5ae2b68124495bd` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/b3d0fd333acb4b27b5ae2b68124495bd?workspace=benchflow) |
-| Precise, CPU 32 GiB | `a455cc6580ad401ab37a96bffb6d9150` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/a455cc6580ad401ab37a96bffb6d9150?workspace=benchflow) |
+
+| Variant                    | Run ID                             | MLflow                                                                                                                                          |
+| -------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Optimized baseline         | `6ef87d95297842548d7c36eb02f3fcdf` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/6ef87d95297842548d7c36eb02f3fcdf?workspace=benchflow) |
+| Precise, no offload        | `b3d0fd333acb4b27b5ae2b68124495bd` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/b3d0fd333acb4b27b5ae2b68124495bd?workspace=benchflow) |
+| Precise, CPU 32 GiB        | `a455cc6580ad401ab37a96bffb6d9150` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/a455cc6580ad401ab37a96bffb6d9150?workspace=benchflow) |
 | Precise, CPU 32 GiB + NVMe | `e6fd24dc869e4bbbb434af9e653d2fbe` | [Open run](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/e6fd24dc869e4bbbb434af9e653d2fbe?workspace=benchflow) |
+
 
 ## Observed results
 
-| Precise variant | RPS | Avg TTFT | p95 TTFT | Avg E2E | Local recompute | External KV | Errors |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| No offload | 7.83 | 1,584 ms | 4,619 ms | 6,899 ms | 28.7% | 0% | 1 |
-| CPU 32 GiB | 8.48 | 1,248 ms | 3,610 ms | 5,702 ms | 20.4% | 3.7% | 1 |
-| CPU 32 GiB + NVMe | 8.85 | 1,090 ms | 2,903 ms | 5,062 ms | 12.0% | 10.5% | 5 |
+
+| Precise variant   | RPS  | Avg TTFT | p95 TTFT | Avg E2E  | Local recompute | External KV | Errors |
+| ----------------- | ---- | -------- | -------- | -------- | --------------- | ----------- | ------ |
+| No offload        | 7.83 | 1,584 ms | 4,619 ms | 6,899 ms | 28.7%           | 0%          | 1      |
+| CPU 32 GiB        | 8.48 | 1,248 ms | 3,610 ms | 5,702 ms | 20.4%           | 3.7%        | 1      |
+| CPU 32 GiB + NVMe | 8.85 | 1,090 ms | 2,903 ms | 5,062 ms | 12.0%           | 10.5%       | 5      |
+
 
 Relative changes:
 
@@ -64,9 +68,8 @@ The 32 GiB CPU tier held approximately 1.68 million logical tokens. CPU and HBM 
 
 Measured cluster-wide CPU offload churn was 3.64 GB/s, about 455 MB/s per replica:
 
-[
-T_{CPU} = \frac{32\ GiB}{455\ MB/s} \approx 75\ s
-]
+\[ T_{CPU} = \frac{32\ GiB}{455\ MB/s} \approx 75\ s \]
+
 
 Observed positive conversation-idle gaps:
 
@@ -215,3 +218,4 @@ Reject any run with:
 3. Compare TTFT, E2E, recomputed prompt tokens, external-KV tokens, queueing, and cache-source distributions before emphasizing RPS.
 4. Only tune NVMe threads or hardware if device busy approaches the acceptance threshold.
 5. Update [[00 - Index|the experiment index]] after every accepted/rejected run batch and whenever the working conclusion changes.
+
