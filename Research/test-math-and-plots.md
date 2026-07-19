@@ -14,12 +14,12 @@ For a synthetic benchmark, successful request throughput and request error rate 
 
 $$
 \begin{aligned}
-\operatorname{Throughput} &= \frac{N_{\mathrm{successful}}}{\Delta t}, \\
-\operatorname{ErrorRate} &= \frac{N_{\mathrm{failed}}}{N_{\mathrm{successful}} + N_{\mathrm{failed}}} \times 100\%.
+\operatorname{Throughput} &= \frac{N_{\mathrm{successful}}}{\Delta t}, 
+\operatorname{ErrorRate} &= \frac{N_{\mathrm{failed}}}{N_{\mathrm{successful}} + N_{\mathrm{failed}}} \times 100.
 \end{aligned}
 $$
 
-In prose, an illustrative error rate of $e = 5.9\%$ means roughly six failed requests per one hundred attempted requests.
+In prose, an illustrative error rate of $e = 5.9$ means roughly six failed requests per one hundred attempted requests.
 
 ## Charts
 
@@ -73,9 +73,10 @@ Figure 1 compares synthetic inference throughput across several illustrative mod
     "view": { "stroke": null }
   }
 }
+
 ```
 
-As Figure 1 shows, the synthetic dataset deliberately assigns lower throughput to larger models.
+As Figure 1 shows, the synthetic dataset deliberately assigns lower throughput to larger models. 
 
 Figure 2 shows an illustrative latency curve as request concurrency rises.
 
@@ -130,6 +131,7 @@ Figure 2 shows an illustrative latency curve as request concurrency rises.
     "view": { "stroke": null }
   }
 }
+
 ```
 
 Figure 2 is intentionally shaped like a saturation curve: latency rises slowly at low concurrency and more sharply beyond 32 concurrent requests.
