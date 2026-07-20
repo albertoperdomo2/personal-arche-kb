@@ -6,10 +6,14 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Status
 
-**Active.** The first post-fix vLLM 0.24 four-way batch is clean enough for performance analysis: all EPP/model pods stayed Ready with zero restarts. In this accepted batch, CPU32 creates a large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, and lack of repeated runs.
+**Active.** The latest CephFS stress run `c3d2102abd41418082df29ae05814c4d` is a reject for performance: it accidentally used vLLM 0.23 and approximate EPP, and C=256/U=0.85 drove write-heavy cache thrash, a 217-request mean queue, and 16.91% boundary cancellations without proving CephFS reads. Separately, the fixed-EPP vLLM 0.24 four-way batch remains the accepted performance comparison: CPU32 creates a large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, direct CephFS read telemetry, and lack of repeated runs.
 
 ## Current working conclusion
 
+- The C=256/U=0.85 CPU64+CephFS run `c3d2102abd41418082df29ae05814c4d` wrote 192.25 GiB to a fresh PVC but still did not expose direct CephFS reads; all Ceph/MDS/OSD and container-FS queries returned zero series.
+- It is beyond the workload capacity knee: versus C=128/U=0.90, throughput fell 10.24%, mean TTFT rose 170.07%, waiting requests rose 159.84%, and the cancellation fraction rose from 7.43% to 16.91%.
+- The hierarchy became store-heavy: 818.70 GiB GPU→CPU versus 59.80 GiB CPU→GPU (13.69:1), while actual prompt reuse fell from 7.58% to 2.33%. The retained final 86 seconds contain 18,054 `cannot store blocks` warnings.
+- The C=256 run again used vLLM 0.23 and its EPP auto-created the approximate producer. Return to U=0.90/C=96–128, pin v0.24+, and use a measured fill/drain/replay test before further pressure sweeps.
 - The CPU64 + CephFS mechanism run `d2c57cdc56084c4193d71bfb8e1cfdfb` proves CephFS writes through a 105.84 GiB retained PVC footprint, but direct Ceph/MDS/OSD and container-FS metrics returned no series, so CephFS read hits cannot be claimed.
 - That CephFS run accidentally used vLLM 0.23.0. Its retained model log contains at least 107,670 `cannot store blocks` warnings across 398 requests; 103 of 1,386 requests were cancelled at the profile boundary. Treat it as a mechanism/debug run, not a v0.24 performance result.
 - The fixed EPP image (digest `sha256:138d54c72f132da48574c6254d7d85d71e7d0186f9fdee6f31a46cc88e319234`, build commit `b41827163b35fa03460f4deecf2cc68bdc60c1a6`) eliminates the v0.9.0 offload-event CrashLoop: every EPP/model pod has zero restarts and no panic.
@@ -26,6 +30,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
+- [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, eight Vega-Lite figures, and corrected experiment design.
 - [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
 - [[2026-07-20 - AgentX CPU64 plus CephFS pressure plan]] — concurrency-128 capacity window, mandatory deployment corrections, retention-clock caveat, and Ceph readback acceptance gates.
 - [[2026-07-17 - Initial AgentX offloading tier analysis]] — reconstruction of the initial report/MLflow deep dive and proposed clean experiment.
@@ -86,6 +91,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 | Variant | Run ID | Link | Disposition |
 |---|---|---|---|
 | AgentX, CPU 64 GiB + CephFS, U=0.9, C=128 | `d2c57cdc56084c4193d71bfb8e1cfdfb` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d2c57cdc56084c4193d71bfb8e1cfdfb?workspace=benchflow) | Reject for performance: actual vLLM 0.23.0; writes proven, read hits unproven; store-admission warning flood and 103 boundary cancellations |
+| AgentX, CPU 64 GiB + CephFS, U=0.85, C=256 | `c3d2102abd41418082df29ae05814c4d` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/c3d2102abd41418082df29ae05814c4d?workspace=benchflow) | Reject: actual vLLM 0.23.0 and approximate EPP; writes proven (192.25 GiB), reads unproven; 16.91% boundary cancellations and store-heavy cache thrash |
 
 ## Immediate next work
 
