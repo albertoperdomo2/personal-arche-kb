@@ -24,6 +24,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
+- [[2026-07-20 - AgentX CPU64 plus CephFS pressure plan]] — concurrency-128 capacity window, mandatory deployment corrections, retention-clock caveat, and Ceph readback acceptance gates.
 - [[2026-07-17 - Initial AgentX offloading tier analysis]] — reconstruction of the initial report/MLflow deep dive and proposed clean experiment.
 - [[2026-07-18 - U0.64 paired-seed AgentX rerun analysis]] — controlled precise triplet, performance/cache staircase, vLLM 0.23 worker-crash isolation, EPP findings, and the Benchflow image-override bug.
 - [[2026-07-19 - vLLM 0.24 offload EPP CrashLoop analysis]] — actual vLLM 0.24 rerun; exact EPP v0.9 empty-engine-key panic, request-error chain, saturation exclusion, and fix/validation plan.
