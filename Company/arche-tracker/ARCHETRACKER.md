@@ -9,6 +9,7 @@ Features, bugs, and known issues for [Arche](https://github.com/opencode-ai/arch
 | ID | Title | Status | Priority | Notes |
 |----|-------|--------|----------|-------|
 | F-001 | Add support for Vega-Lite interactive plots in the KB | Planned | P2 | Current KB charts are static Vega-Lite specs. Interactive features (tooltips, selection, zoom) would improve exploration. |
+| F-002 | Add support for secrets / ENV vars in flows | Planned | P2 | Allow flows to reference secrets or ENV vars so they can fetch gated external data (APIs, private repos, etc.) without hardcoding credentials. |
 
 ## Bugs
 
