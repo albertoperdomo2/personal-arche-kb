@@ -33,26 +33,28 @@ Machine API showed `Phase: Running` (stale cache), but IBM Cloud API reported in
 - **12:21 UTC** — Second stop/start cycle attempted. Same result: `failed` with `cannot_start_capacity`.
 
 ### 2026-07-18 retry
-- **09:38 UTC** — Third stop/start cycle attempted. Instance stopped successfully, then `instance-start` issued. Instance entered `starting` state with no immediate error (unlike previous day's instant rejections).
+- **09:38 UTC** — Third stop/start cycle attempted. Instance stopped successfully, then `instance-start` issued. Instance entered `starting` state with no immediate error.
 - **~09:42 UTC** — Instance still in `starting` state after ~4 minutes — appeared promising.
 - **~09:44 UTC** — Instance transitioned back to `failed` with `cannot_start_capacity`. H100 capacity in `eu-de-2` still unavailable after ~26 hours.
+
+### 2026-07-20 retry — RESOLVED
+- **10:20 UTC** — Fourth stop/start cycle attempted. Instance stopped, then `instance-start` issued.
+- **~10:21 UTC** — Instance entered `starting` state with no immediate error.
+- **~10:22 UTC** — Instance reached `running` state. H100 capacity in `eu-de-2` became available after ~3 days.
+- **~10:24 UTC** — Node `diadochos-hqxzk-gpu-h100-mt46x` transitioned to `Ready` in OCP.
+- **~10:25 UTC** — Ceph mons back in quorum (`c,d,e`). OSDs on the recovered node still re-peering; PGs degraded but recovering.
 
 ## Root Cause
 The IBM Cloud VPC instance entered a `failed` state at the hypervisor level. The exact cause of the initial failure is unknown (could be hardware fault, hypervisor issue, or resource exhaustion on the host).
 
-When attempting to restart, IBM Cloud returned `cannot_start_capacity`: there is no available H100 GPU capacity in zone `eu-de-2` to place the instance. The instance has **no reservation**, so it competes for on-demand capacity.
+When attempting to restart, IBM Cloud returned `cannot_start_capacity`: there was no available H100 GPU capacity in zone `eu-de-2` to place the instance. The instance has **no reservation**, so it competes for on-demand capacity. Capacity was unavailable for ~3 days (2026-07-17 to 2026-07-20).
 
 The OCP Machine API cached the instance status as `running` and did not detect the failure — no `MachineHealthCheck` is configured for the GPU worker MachineSet.
 
 ## Resolution
-**UNRESOLVED** as of 2026-07-18 09:44 UTC. Three stop/start cycles across two days have all failed with `cannot_start_capacity`.
+**RESOLVED** on 2026-07-20 ~10:22 UTC. Fourth stop/start cycle succeeded after H100 capacity became available in `eu-de-2`. Node is `Ready`, Ceph mons in quorum, OSDs recovering.
 
-Options:
-1. **Retry periodically** — H100 capacity may free up. Run: `ibmcloud is instance-start 02c7_e6e3837b-a31c-416a-a16e-01b35e0cf37f`
-2. **Open IBM Cloud support case** — request priority placement or capacity reservation for the instance.
-3. **Delete and recreate** the Machine in a different zone (if available) — last resort, would require Ceph OSD rebalancing.
-
-Ceph will auto-recover once the node comes back: OSDs rejoin, `mon.d` reschedules, PGs re-peer.
+Total downtime: ~3 days (2026-07-17 08:19 to 2026-07-20 ~10:24 UTC).
 
 ## Prevention / Runbook
 1. **Add a MachineHealthCheck** for the GPU MachineSet to detect and auto-remediate NotReady nodes:
