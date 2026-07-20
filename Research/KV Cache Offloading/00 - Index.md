@@ -10,6 +10,8 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Current working conclusion
 
+- The CPU64 + CephFS mechanism run `d2c57cdc56084c4193d71bfb8e1cfdfb` proves CephFS writes through a 105.84 GiB retained PVC footprint, but direct Ceph/MDS/OSD and container-FS metrics returned no series, so CephFS read hits cannot be claimed.
+- That CephFS run accidentally used vLLM 0.23.0. Its retained model log contains at least 107,670 `cannot store blocks` warnings across 398 requests; 103 of 1,386 requests were cancelled at the profile boundary. Treat it as a mechanism/debug run, not a v0.24 performance result.
 - The fixed EPP image (digest `sha256:138d54c72f132da48574c6254d7d85d71e7d0186f9fdee6f31a46cc88e319234`, build commit `b41827163b35fa03460f4deecf2cc68bdc60c1a6`) eliminates the v0.9.0 offload-event CrashLoop: every EPP/model pod has zero restarts and no panic.
 - The accepted performance staircase is approximate 5.461 req/s, precise no-offload 5.611, CPU32 6.529, and CPU32+NVMe 6.546.
 - CPU32 versus precise no-offload improves request throughput 16.36%, mean TTFT 52.47%, and mean E2E latency 32.09%.
@@ -24,6 +26,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
+- [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
 - [[2026-07-20 - AgentX CPU64 plus CephFS pressure plan]] — concurrency-128 capacity window, mandatory deployment corrections, retention-clock caveat, and Ceph readback acceptance gates.
 - [[2026-07-17 - Initial AgentX offloading tier analysis]] — reconstruction of the initial report/MLflow deep dive and proposed clean experiment.
 - [[2026-07-18 - U0.64 paired-seed AgentX rerun analysis]] — controlled precise triplet, performance/cache staircase, vLLM 0.23 worker-crash isolation, EPP findings, and the Benchflow image-override bug.
@@ -77,6 +80,12 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 | Precise, no offload | `186e43cb9b4a4a7e82c3bca930a5cb35` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/186e43cb9b4a4a7e82c3bca930a5cb35?workspace=benchflow) | Accept; zero errors and zero restarts |
 | Precise, CPU 32 GiB | `49e9185c2a5f4cc4951dfec020d67bd9` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/49e9185c2a5f4cc4951dfec020d67bd9?workspace=benchflow) | Accept; 16.36% RPS over no-offload, one isolated HTTP 503 |
 | Precise, CPU 32 GiB + NVMe | `d37d113709e5426f92a3b1ac271c9c92` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d37d113709e5426f92a3b1ac271c9c92?workspace=benchflow) | Accept with router-index caveat; active NVMe, one isolated HTTP 503 |
+
+## CephFS mechanism audit registry
+
+| Variant | Run ID | Link | Disposition |
+|---|---|---|---|
+| AgentX, CPU 64 GiB + CephFS, U=0.9, C=128 | `d2c57cdc56084c4193d71bfb8e1cfdfb` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d2c57cdc56084c4193d71bfb8e1cfdfb?workspace=benchflow) | Reject for performance: actual vLLM 0.23.0; writes proven, read hits unproven; store-admission warning flood and 103 boundary cancellations |
 
 ## Immediate next work
 
