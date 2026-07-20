@@ -30,7 +30,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
-- [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, eight Vega-Lite figures, and corrected experiment design.
+- [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, nine Vega-Lite figures, and corrected experiment design.
 - [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
 - [[2026-07-20 - AgentX CPU64 plus CephFS pressure plan]] — concurrency-128 capacity window, mandatory deployment corrections, retention-clock caveat, and Ceph readback acceptance gates.
 - [[2026-07-17 - Initial AgentX offloading tier analysis]] — reconstruction of the initial report/MLflow deep dive and proposed clean experiment.
