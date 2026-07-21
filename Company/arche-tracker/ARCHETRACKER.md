@@ -17,7 +17,7 @@ Features, bugs, and known issues for [Arche](https://github.com/opencode-ai/arch
 
 | ID | Title | Status | Severity | Notes |
 |----|-------|--------|----------|-------|
-| | | | | |
+| B-001 | HTTP 413 on KB publish with large inline Vega-Lite datasets | Planned | P0 | Inline chart data (e.g. 15-second Vega-Lite specs) pushes articles to 179–255 KB, exceeding the MCP publication limit. Forces splitting articles that should be one. |
 
 ## Known Issues
 
