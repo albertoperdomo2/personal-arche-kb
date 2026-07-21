@@ -9,7 +9,7 @@ Distributed inference / serving. Performance and scalability work as part of the
 
 ## Key Context
 - Repo: `openshift-psap/forge`, project `projects/llm_d`
-- Areas I touch: LLMInferenceService rendering, deployment profiles, GuideLLM workloads, model-cache PVCs, GuideLLM workloads, Fournos presets.
+- Areas I touch: LLMInferenceService rendering, deployment profiles, model-cache PVCs, GuideLLM workloads, Fournos presets.
 
 ## Recent Progress
 - 2026-07-21: Added the `llama-33-70b-rhoai-release` preset for a 1 model × 3 deployment × 3 workload matrix (9 isolated runs).
