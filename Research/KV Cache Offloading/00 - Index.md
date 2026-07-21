@@ -37,8 +37,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
-- [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — four-cell deployment/workload audit, acceptance decisions, vLLM source-level CephFS backpressure root cause, equations, and seven main figures.
-- Companion native-resolution plots: [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/GPU KV occupancy appendix|GPU KV occupancy appendix]], [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/Native KV transfer appendix|native KV transfer appendix]], and [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/Storage metric appendix|storage metric appendix]].
+- [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — consolidated four-cell deployment/workload audit, acceptance decisions, vLLM source-level CephFS backpressure root cause, equations, and eleven renderer-validated figures at the finest available source cadence.
 
 - [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, nine Vega-Lite figures, and corrected experiment design.
 - [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
