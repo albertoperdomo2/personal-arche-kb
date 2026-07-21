@@ -1,6 +1,6 @@
 # 2026-07-21 — AgentX C32 U0.55 vLLM 0.23 storage metric appendix
 
-Companion to [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 offload tier matrix]]. Both plots retain every available 15-second sample.
+Companion to [[00 - Report|main report]]. Both plots retain every available 15-second sample.
 
 ## CephFS allocation
 

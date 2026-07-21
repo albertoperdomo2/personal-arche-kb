@@ -1,6 +1,6 @@
 # 2026-07-21 — AgentX C32 U0.55 vLLM 0.23 GPU KV occupancy appendix
 
-Companion to [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 offload tier matrix]]. All time series use the finest available 15-second sample cadence with no additional downsampling.
+Companion to [[00 - Report|main report]]. All time series use the finest available 15-second sample cadence with no additional downsampling.
 
 ## GPU KV-cache occupancy
 

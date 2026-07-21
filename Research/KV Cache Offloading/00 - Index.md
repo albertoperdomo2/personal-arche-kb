@@ -6,9 +6,16 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Status
 
-**Active.** The latest CephFS stress run `c3d2102abd41418082df29ae05814c4d` is a reject for performance: it accidentally used vLLM 0.23 and approximate EPP, and C=256/U=0.85 drove write-heavy cache thrash, a 217-request mean queue, and 16.91% boundary cancellations without proving CephFS reads. Separately, the fixed-EPP vLLM 0.24 four-way batch remains the accepted performance comparison: CPU32 creates a large gain over precise no-offload; CPU32+NVMe is active and improves latency tails but adds almost no request throughput beyond CPU32. Remaining publication blockers are precise-renderer latency/timeouts, NVMe-only missing-parent index events, direct CephFS read telemetry, and lack of repeated runs.
+**Active.** The latest U=0.55/C=32 vLLM 0.23 four-cell matrix establishes a large CPU-offload benefit, but it is not a clean secondary-tier A/B. CPU96+NVMe is fastest but changes CPU capacity and uses an uncleared host path. CPU64+CephFS is a rejected healthy-performance cell and an accepted failure experiment: it writes 192.39 GiB, then async filesystem stores pin the CPU tier and trigger sustained store-admission failures after 12.31 minutes. The fixed-EPP vLLM 0.24 batch remains the accepted prior routing/performance comparison.
 
 ## Current working conclusion
+
+- In the U=0.55/C=32 matrix, CPU64 raised successful throughput from 0.578 to 1.174 requests/s (+103.1%), halved TTFT/E2E latency, and served 77.3% of prompt tokens through external KV transfer versus 0% without offload.
+- CPU96+NVMe reached 1.296 requests/s (+10.4% over CPU64), but the gain cannot be attributed to NVMe: CPU capacity also increased by 32 GiB, the host path declared `cleanup: false`, NVMe reads were only 42.9 GiB versus 381.2 GiB writes, and average device busy time was 14.8%.
+- CPU64+CephFS reached 1.031 requests/s, 12.2% below matched CPU64. A fresh 3 TiB PVC accumulated 192.39 GiB, proving writes, but 102,325 `cannot store blocks` warnings began at 12.31 minutes across 812 request IDs.
+- The vLLM 0.23 source path explains the Ceph failure: async secondary stores retain references on primary CPU blocks; when CephFS cannot drain quickly enough, those blocks are non-evictable, `prepare_store` returns `None`, external prompt sourcing falls 67.7%, and local compute grows 4.0×.
+- U=0.55/C=32 already keeps GPU KV occupancy around 92–94% and is sufficient to expose offload behavior. Do not increase concurrency or lower U until secondary-tier draining is healthy.
+- The next matrix must hold CPU bytes, shared memory, clean state, hash seed, and every non-tier flag constant. Add CPU96 without NVMe and CPU64+NVMe controls, direct per-tier hit/byte/latency/queue telemetry, and at least three seeds.
 
 - The C=256/U=0.85 CPU64+CephFS run `c3d2102abd41418082df29ae05814c4d` wrote 192.25 GiB to a fresh PVC but still did not expose direct CephFS reads; all Ceph/MDS/OSD and container-FS queries returned zero series.
 - It is beyond the workload capacity knee: versus C=128/U=0.90, throughput fell 10.24%, mean TTFT rose 170.07%, waiting requests rose 159.84%, and the cancellation fraction rose from 7.43% to 16.91%.
@@ -29,6 +36,9 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 - Repeat every selected point at least three times. The current 0.26% NVMe RPS delta is below single-run resolution, while its p95 latency improvement is promising but unreplicated.
 
 ## Documents
+
+- [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — four-cell deployment/workload audit, acceptance decisions, vLLM source-level CephFS backpressure root cause, equations, and seven main figures.
+- Companion native-resolution plots: [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/GPU KV occupancy appendix|GPU KV occupancy appendix]], [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/Native KV transfer appendix|native KV transfer appendix]], and [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/Storage metric appendix|storage metric appendix]].
 
 - [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, nine Vega-Lite figures, and corrected experiment design.
 - [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
@@ -93,14 +103,21 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 | AgentX, CPU 64 GiB + CephFS, U=0.9, C=128 | `d2c57cdc56084c4193d71bfb8e1cfdfb` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d2c57cdc56084c4193d71bfb8e1cfdfb?workspace=benchflow) | Reject for performance: actual vLLM 0.23.0; writes proven, read hits unproven; store-admission warning flood and 103 boundary cancellations |
 | AgentX, CPU 64 GiB + CephFS, U=0.85, C=256 | `c3d2102abd41418082df29ae05814c4d` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/c3d2102abd41418082df29ae05814c4d?workspace=benchflow) | Reject: actual vLLM 0.23.0 and approximate EPP; writes proven (192.25 GiB), reads unproven; 16.91% boundary cancellations and store-heavy cache thrash |
 
+## vLLM 0.23 U0.55/C32 tier-matrix registry
+
+| Variant | Run ID | Link | Disposition |
+|---|---|---|---|
+| No offload | `6ded92329a4844c5a4c6f11f5cab764c` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/6ded92329a4844c5a4c6f11f5cab764c?workspace=benchflow) | Directionally accept; 19 boundary cancellations censor the latency tail |
+| CPU 64 GiB | `aad824ce1e8b47699e869fd9fcf86625` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/aad824ce1e8b47699e869fd9fcf86625?workspace=benchflow) | Accept as the matched CPU-offload comparison |
+| CPU 96 GiB + NVMe | `0289ad8ab78a4929aca49fbcf483fa51` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/0289ad8ab78a4929aca49fbcf483fa51?workspace=benchflow) | Accept combined configuration; reject isolated NVMe attribution |
+| CPU 64 GiB + CephFS | `4adc495ff3a841c580d2cbbe5d8a01eb` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/4adc495ff3a841c580d2cbbe5d8a01eb?workspace=benchflow) | Reject as healthy performance; accept as a filesystem-drain failure experiment |
+
 ## Immediate next work
 
-1. Pin the verified fixed EPP digest and keep vLLM 0.24.0.
-2. Align render pods to vLLM 0.24.0, reserve more CPU, scale/balance them, and capture render CPU/request-latency telemetry.
-3. Require zero precise tokenization timeouts.
-4. Diagnose/fix NVMe missing-parent event ordering or make the index recover instead of dropping the complete `BlockStored` event.
-5. Repeat the current U0.64/CPU32/concurrency-128 point at least three times to estimate variance.
-6. Run paired CPU16 and CPU16+NVMe at concurrency 128, then 192 and 256.
-7. Select the point where CPU-only recomputation is 20–35% and NVMe recomputation is below 10–15%, without sustained queue/storage saturation.
-8. Only then add a U0.56 sensitivity point.
-9. Keep the realistic AgentX trace as primary; optionally add a shorter-output cache-sensitive agentic profile to expose throughput rather than decode dominance.
+1. Run CPU64, CPU64+NVMe, CPU96, and CPU96+NVMe with identical U=0.55/C=32/TP=2, shared memory, image digest, and flags.
+2. Add matched CPU64+CephFS and CPU96+CephFS cells; require zero sustained `cannot store blocks`.
+3. Start every filesystem tier empty and set `PYTHONHASHSEED=0`; retain proof of clean state.
+4. Instrument secondary-tier hits/misses, submitted/completed bytes, latency, queue depth, in-flight blocks/jobs, and failures; fix Ceph pool/MDS/OSD metric collection.
+5. Sweep CephFS write threads only after queue telemetry exists; accept a setting only if completion rate remains at or above submission rate.
+6. Repeat every selected point with at least three seeds and add a fixed-request/reuse replay beside the realistic AgentX run.
+7. Keep the verified fixed EPP digest for v0.24 routing work; separately finish renderer capacity/version alignment and NVMe missing-parent event-ordering fixes.

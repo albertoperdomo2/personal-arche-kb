@@ -1,6 +1,6 @@
 # 2026-07-21 — AgentX C32 U0.55 vLLM 0.23 offload-tier matrix
 
-Native-resolution companion charts: [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 GPU KV occupancy appendix]], [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 native KV transfer appendix]], and [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 storage metric appendix]].
+Native-resolution companion charts: [[GPU KV occupancy appendix]], [[Native KV transfer appendix]], and [[Storage metric appendix]].
 
 ## Executive conclusion
 
@@ -90,7 +90,7 @@ Figure 5 rules out “the GPU cache simply was not pressured.” The smaller U=0
 
 Provenance: canonical `vllm:kv_cache_usage_perc` gauge, 15-second samples. The duplicate `kserve_vllm:` alias was removed rather than summed.
 
-Figure 5 is rendered at 15-second resolution in [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 GPU KV occupancy appendix]].
+Figure 5 is rendered at 15-second resolution in [[GPU KV occupancy appendix]].
 
 ## CephFS: active, but unable to drain stores
 
@@ -117,7 +117,7 @@ Figure 6 supplies the strongest temporal corroboration. Before the first store r
 
 Provenance: vLLM native offload byte counters transformed to five-minute rates and sampled every 15 seconds. These counters cover GPU↔CPU transfers; they do not identify CPU↔filesystem bytes.
 
-Figure 6 is rendered at 15-second resolution in [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 native KV transfer appendix]].
+Figure 6 is rendered at 15-second resolution in [[Native KV transfer appendix]].
 
 Figure 7 places the exact warning onset at minute 12. It persists through the end of the send window, which means this is sustained pressure rather than a startup transient.
 
@@ -131,7 +131,7 @@ Figure 8 confirms filesystem allocation but must not be read as a write-bandwidt
 
 Provenance: `kubelet_volume_stats_used_bytes` sampled every 15 seconds; the source itself refreshes coarsely.
 
-Figure 8 is rendered at 15-second resolution in [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 storage metric appendix]].
+Figure 8 is rendered at 15-second resolution in [[Storage metric appendix]].
 
 ## NVMe: active and not saturated, but not isolated
 
@@ -141,7 +141,7 @@ Figure 9 shows the sustained write-heavy device pattern and comparatively small 
 
 Provenance: node exporter NVMe counters, five-minute rates sampled every 15 seconds; these are node/device metrics and are not container-isolated.
 
-Figure 9 is rendered at 15-second resolution in [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 storage metric appendix]].
+Figure 9 is rendered at 15-second resolution in [[Storage metric appendix]].
 
 The key asymmetry is that NVMe read bytes were only **1.03%** of observed CPU→GPU transfer bytes. Host-device and vLLM counters are not perfectly commensurate, but the order-of-magnitude difference says the workload mostly reloaded from the large CPU tier. Therefore the 10.4% lead over CPU64 cannot be assigned to NVMe. A 96 GiB CPU-only control is mandatory.
 

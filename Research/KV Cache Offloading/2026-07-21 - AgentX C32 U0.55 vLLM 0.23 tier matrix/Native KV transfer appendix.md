@@ -1,6 +1,6 @@
 # 2026-07-21 — AgentX C32 U0.55 vLLM 0.23 native KV transfer appendix
 
-Companion to [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 offload tier matrix]]. The time series uses the finest available 15-second sample cadence with no additional downsampling.
+Companion to [[00 - Report|main report]]. The time series uses the finest available 15-second sample cadence with no additional downsampling.
 
 ## CPU-only versus CephFS native KV transfers
 
