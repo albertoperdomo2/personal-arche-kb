@@ -17,6 +17,16 @@ Distributed inference / serving. Performance and scalability work as part of the
 - Translated working approximate- and precise-prefix-cache LLMInferenceService references into reusable Forge manifests. Precise routing dynamically resolves the model name, EPP service, and cached-model mount path.
 - Validated the preset through the actual `llm_d ci` dry-run entrypoint; all nine LLMInferenceService manifests rendered successfully.
 
+## Launch from GitHub
+Comment on a Forge pull request:
+
+```text
+/test fournos llm_d llama-33-70b-rhoai-release
+/cluster <registered-cluster-name>
+```
+
+The cluster name must match the Fournos cluster registration. Add `/fournos wip` or `/fournos staging` only when targeting the corresponding Fournos control namespace; otherwise the default is `psap-automation`. An optional `/var runtime.model_name: organization/model` line overrides the preset's model.
+
 ## Open Threads
 - Run the matrix on the target RHOAI cluster and record accepted/rejected benchmark runs and MLflow links under the relevant research experiment.
 - Confirm model-cache storage/reuse strategy for nine isolated namespaces before repeated 70B runs.
