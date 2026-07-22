@@ -21,6 +21,7 @@ Distributed inference / serving. Performance and scalability work as part of the
 - Removed the affinity workaround completely, preserving KServe's default EPP injection. The cache configuration documents the supported GitHub overrides for an RWX-capable class: `model_cache.pvc.access_mode` and `model_cache.pvc.storage_class_name`.
 - Set every defined GuideLLM benchmark profile (`short`, `concurrent-1k-1k`, `heavy-heterogeneous`, and `multi-turn`) to an explicit `timeout_seconds: 3600`.
 - Fixed the GuideLLM timeout path: the workload timeout now sets the Kubernetes Job `activeDeadlineSeconds` and the Forge poll budget (`timeout + 60s` status-observation grace). On wait expiry, Forge captures the GuideLLM Job, pod state, and logs before raising. This fixes the prior 30m34s hard-coded waiter expiration during the 5 × 600s `concurrent-1k-1k` sweep.
+- 2026-07-22: The first post-fix staging run (`forge-llm-d-20260722-072911`, athena-fire, RWX `nfs-rwx`) confirmed that `concurrent-1k-1k` can run to completion (about 51m41s). However, Fournos interrupted Forge at the outer PipelineRun 1-hour deadline while its result-copy pod was still starting. No later workload or deployment began. The current failure is therefore an outer pipeline-budget constraint, not a GuideLLM Job timeout or benchmark failure.
 
 ## Launch from GitHub
 For a cluster with an RWX-capable storage class:
@@ -39,6 +40,7 @@ Add `/fournos wip` or `/fournos staging` only when targeting the corresponding F
 The preset selects the moving `beta` channel head; it does not pin an immutable operator bundle or image digest. RHOAI EA deployments require a fresh installation rather than an upgrade from an existing EA/GA installation.
 
 ## Open Threads
+- Raise/configure the outer Fournos PipelineRun timeout before launching this matrix. A 1-hour ceiling is insufficient even for the first `concurrent-1k-1k` run plus result collection, and cannot accommodate nine sequential runs.
 - Identify the target cluster's RWX-capable storage class.
 - Re-run the prior model-cache scenario using a new RWX PVC and confirm EPP starts with KServe's default container injection and no `FailedAttachVolume` events.
 - Run the matrix on the target RHOAI cluster and record accepted/rejected benchmark runs and MLflow links under the relevant research experiment.
