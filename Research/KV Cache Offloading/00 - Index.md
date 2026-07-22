@@ -6,9 +6,18 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Status
 
-**Active.** The U=0.55/C=32 vLLM 0.23 matrix now includes a second CPU64+CephFS observation. NVMe remains directionally promising (+10.5% request throughput over CPU64), while both CephFS runs are rejected healthy-performance cells and accepted failure experiments. The new Ceph run fell to 0.732 requests/s because external reuse collapsed and rare multi-minute stalls throttled AgentX's closed loop; post-run log collection was not causal.
+**Active.** The first Nemotron 3 Super 120B U=0.64/C=32/TP=4 tier matrix is now documented. CPU64 is a successful offload point, NVMe adds a provisional 12.5% request-throughput gain over CPU64, and CephFS regresses 7.2% below CPU64 with store-admission backpressure and no direct read proof. The earlier Qwen U=0.55/C=32 CephFS failure investigation remains active in parallel.
 
 ## Current working conclusion
+
+- In the Nemotron 3 Super 120B U=0.64/C=32/TP=4 matrix, CPU64 reaches 1.296 requests/s (+80.7% over no offload), NVMe reaches 1.458 (+12.5% over CPU64), and CephFS reaches 1.203 (-7.2% versus CPU64 and -17.5% versus NVMe).
+- CPU64, NVMe, and CephFS source nearly the same prompt-token share externally (20.28%, 19.64%, and 19.76%). NVMe wins through better hierarchy retention: 67.91% local-HBM hits and 12.45% recompute versus CPU64's 57.15%/22.57% and CephFS's 51.60%/28.65%.
+- CPU64 offload is genuinely active and useful: 1.79 TiB GPU→CPU stores and 478.1 GiB CPU→GPU loads (3.84:1). NVMe is more balanced at 999.4/514.7 GiB (1.94:1).
+- NVMe directly reads 495.6 GiB and writes 505.7 GiB; physically valid device-busy p95 is 29.2%, so the SSD is active and not saturated.
+- CephFS retains 192.23 GiB on the PVC, proving writes, but direct CephFS reads remain unobserved. Its transfer service cost is 38.9%/32.5% above NVMe, and the truncated model-log tail contains at least 12,257 `cannot store blocks` warnings across 45 requests.
+- The CPU allowance and observed host working set are matched, but CPU64 uses default `CPUOffloadingSpec` with 1 GiB `/dev/shm`; NVMe/CephFS use `TieringOffloadingSpec` with 200/128 GiB. Add a CPU64 Tiering/no-secondary/200-GiB-`/dev/shm` control before attributing the full 12.5% NVMe delta to storage.
+- Matched request shapes differ by only three prompt tokens at p95. All model pods have zero restarts, preemptions, CUDA OOMs, tracebacks, and missing-parent failures. Workload drift and system crashes do not explain the staircase.
+- Every EPP auto-created the approximate producer. One backend replica makes routing placement irrelevant here, but this experiment cannot measure precise-EPP gains.
 
 - In the U=0.55/C=32 matrix, CPU64 raised successful throughput from 0.578 to 1.174 requests/s (+103.1%), halved TTFT/E2E latency, and served 77.3% of prompt tokens through external KV transfer versus 0% without offload.
 - The corrected CPU64+NVMe run `b06d550d0b314b028a93dd2cd43ecc79` reached 1.298 requests/s (+10.5% over CPU64), reduced mean TTFT 29.8% and mean E2E latency 22.2%, and completed 44 sessions versus 41. It read 459.8 GiB and wrote 381.5 GiB at 13.5% mean NVMe busy; CPU capacity is matched, but `/dev/shm` (200 versus 1 GiB), `cleanup: false`, unset `PYTHONHASHSEED`, and one run per cell keep the effect provisional.
@@ -40,6 +49,8 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
+- [[2026-07-22 - Nemotron 3 Super 120B AgentX U0.64 TP4 tier matrix/00 - Report|2026-07-22 - Nemotron 3 Super 120B AgentX U0.64 TP4 tier matrix]] — four-run Nemotron CPU64/NVMe/CephFS matrix, matched-request analysis, CephFS mechanism audit, equations, and twenty renderer-validated figures at 15-second cadence.
+
 - [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — corrected tier matrix plus the second CephFS observation, all-case running/waiting request telemetry, paired-request tail analysis, post-run log-capture exclusion, equations, and twelve renderer-validated figures.
 
 - [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, nine Vega-Lite figures, and corrected experiment design.
@@ -52,6 +63,8 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Source report and artifacts
 
+- Nemotron experiment-258 artifacts: `/private/tmp/kv-cache-experiments/experiment-258/`
+- Nemotron analysis/report helpers: `/private/tmp/kv-cache-experiments/analyze_experiment_258.py` and `generate_experiment_258_report.py`
 - Local initial report: `/private/tmp/kv-cache-experiments/llm-d-qwen3.6-35b-a3b-agentx-report.html`
 - Initial normalized artifacts: `/private/tmp/kv-cache-experiments/mlflow-report-runs/`
 - v0.23 controlled rerun artifacts: `/private/tmp/kv-cache-experiments/rerun-2026-07-18/`
@@ -115,7 +128,26 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 | CPU 64 GiB + CephFS | `4adc495ff3a841c580d2cbbe5d8a01eb` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/4adc495ff3a841c580d2cbbe5d8a01eb?workspace=benchflow) | Reject as healthy performance; accept as a filesystem-drain failure experiment |
 | CPU 64 GiB + CephFS (log capture) | `1cd063d289f1456da4507382fe284df7` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/1cd063d289f1456da4507382fe284df7?workspace=benchflow) | Reject: repeated drain failure, severe p99 tail; log collection was post-run and the retained model log is incomplete |
 
+## Nemotron 3 Super 120B U0.64/C32/TP4 tier-matrix registry
+
+| Variant | Run ID | Link | Disposition |
+|---|---|---|---|
+| No offload | `3c3ffc092963423cbc9bf7cfc4430dd3` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/3c3ffc092963423cbc9bf7cfc4430dd3?workspace=benchflow) | Accept as HBM-only control; 15 boundary cancellations |
+| CPU 64 GiB | `20fbe74db980428faca35219f5c1300b` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/20fbe74db980428faca35219f5c1300b?workspace=benchflow) | Accept as capacity-matched CPU-offload control; implementation and shared memory differ from tiered cells |
+| CPU 64 GiB + NVMe | `1e9557781f9c4b63a7647e767d938c13` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/1e9557781f9c4b63a7647e767d938c13?workspace=benchflow) | Accept as active tiered readback; provisional +12.5% over CPU64 until Tiering/no-secondary control exists |
+| CPU 64 GiB + CephFS | `d606a0712dca4287b1503f285531de57` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/d606a0712dca4287b1503f285531de57?workspace=benchflow) | Reject as clean storage comparison: writes proven, reads unproven, slower service and store-refusal tail |
+| CPU 32 GiB, superseded | `4f7779a03b444551984853b683852f7a` | [MLflow](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/4f7779a03b444551984853b683852f7a?workspace=benchflow) | Retain as exploratory run; excluded from the final matrix because CPU capacity is not matched |
+
 ## Immediate next work
+
+### Nemotron 3 Super 120B
+
+1. Add `TieringOffloadingSpec`, CPU 64 GiB, 200 GiB `/dev/shm`, and no secondary tier.
+2. Repeat CPU64, NVMe, and CephFS with identical 200 GiB `/dev/shm`, `PYTHONHASHSEED=0`, clean run-scoped storage, and at least three paired repetitions.
+3. Fix Ceph MDS/OSD/CSI log RBAC and direct Ceph pool/MDS/OSD metrics; retain the complete model log and require direct secondary-tier read evidence.
+4. Keep U=0.64/C=32 until the implementation/shared-memory control is complete; only then sweep C=32/48/64.
+
+### Earlier Qwen investigation
 
 1. Repeat CPU64 and CPU64+NVMe with identical U=0.55/C=32/TP=2, 200 GiB shared memory, image digest, release topology, and all non-tier flags.
 2. Repeat CPU64+CephFS on `…-6kl5z` and `…-fx7c8` with a unique fresh PVC per run; require zero sustained `cannot store blocks` and no p99 tail explosion.
