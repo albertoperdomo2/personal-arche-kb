@@ -56,6 +56,9 @@ The child cleanup TaskRun never created a pod. `cpu-offloading-m1` remains deplo
 - Investigate management API-server latency/availability when Kueue logs show leader-lease update timeouts; Kueue's singleton controller makes the webhook unavailable during a restart.
 - A failed post-benchmark collection/cleanup means the benchmark is incomplete even if the benchmark TaskRun succeeded.
 
+## BenchFlow Follow-up
+BenchFlow commit `c5eac91` isolates per-child submission errors in the matrix supervisor. A transient API or Kueue rejection now records that child as failed and continues submitting later matrix children; the parent reports the aggregate failure only after every child was attempted. This does not mask the Kueue outage, but prevents it from suppressing independent remaining experiments.
+
 ## Related
 - Project: [[BenchFlow]]
 - Related execution: `cpu-offloading-matrix-0e8dc9`, child `cpu-offloading-1e966e`
