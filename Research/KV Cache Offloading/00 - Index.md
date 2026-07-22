@@ -40,7 +40,7 @@ Under which cache sizes, reuse windows, and workload pressures do precise prefix
 
 ## Documents
 
-- [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — corrected tier matrix plus the second CephFS observation, paired-request tail analysis, post-run log-capture exclusion, equations, and eleven renderer-validated figures.
+- [[2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix/00 - Report|2026-07-21 - AgentX C32 U0.55 vLLM 0.23 tier matrix]] — corrected tier matrix plus the second CephFS observation, all-case running/waiting request telemetry, paired-request tail analysis, post-run log-capture exclusion, equations, and twelve renderer-validated figures.
 
 - [[2026-07-20 - AgentX C256 U0.85 CPU64 plus CephFS stress analysis]] — native-resolution stress-run audit: write proof, missing read proof, workload saturation, store/load imbalance, approximate-EPP and v0.23 mismatches, nine Vega-Lite figures, and corrected experiment design.
 - [[2026-07-20 - AgentX CPU64 plus CephFS single-run analysis]] — CephFS write proof, missing read telemetry, v0.23 version mismatch, CPU-tier pinning/backpressure root cause, nine Vega-Lite figures, and corrected-run gates.
