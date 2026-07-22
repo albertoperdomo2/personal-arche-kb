@@ -21,6 +21,8 @@ The immediate experiment-design correction is to add a **CPU 64 GiB `TieringOffl
 | CPU 64 GiB + NVMe | [`1e9557781f9c4b63a7647e767d938c13`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/1e9557781f9c4b63a7647e767d938c13?workspace=benchflow) | 1.458 requests/s | Accept as proof of useful tiered readback; do not attribute gain to NVMe alone |
 | CPU 64 GiB + CephFS | [`d606a0712dca4287b1503f285531de57`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/d606a0712dca4287b1503f285531de57?workspace=benchflow) | 1.203 requests/s | Directionally useful but reject as a clean storage comparison: direct reads unobserved and store-refusal tail present |
 
+Run [`4f7779a03b444551984853b683852f7a`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/4f7779a03b444551984853b683852f7a?workspace=benchflow) was initially supplied as the CPU-only cell but configures 32 GiB, not 64 GiB. It is retained as a superseded exploratory run and excluded from every comparison and figure in this report.
+
 ## Controlled workload and deployment audit
 
 The controlled dimensions are strong: all four runs use `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8`, one replica, TP=4 on four H100s, `vllm/vllm-openai:v0.23.0` at image digest `sha256:3a1e7f…bdbe3ac0`, node `diadochos-hqxzk-gpu-h100-6kl5z`, `gpu-memory-utilization=0.64`, `max-model-len=131072`, prefix caching, AgentX MVP, the same WEKA repository, seed 42, concurrency 32, and a 1,800-second send window. Successful matched requests differ by only 3 prompt tokens at p95 between CPU64 and NVMe, and 3 between NVMe and CephFS. Workload-shape drift does not explain either gap.
