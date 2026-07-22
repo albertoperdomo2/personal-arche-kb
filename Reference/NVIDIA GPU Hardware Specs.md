@@ -6,19 +6,19 @@
 
 ## Quick Comparison Table
 
-| GPU | Architecture | VRAM | Mem BW (TB/s) | FP8 Sparse (TFLOPS) | FP4 Sparse (TFLOPS) | TDP | NVLink BW | Form Factor |
-|-----|-------------|------|---------------|---------------------|---------------------|-----|-----------|-------------|
-| **H100 SXM5** | Hopper | 80 GB HBM3 | 3.35 | 3,958 | — | 700W | 900 GB/s | SXM5 |
-| **H100 PCIe** | Hopper | 80 GB HBM2e | 2.0 | 3,026 | — | 350W | 600 GB/s | PCIe |
-| **H100 NVL** | Hopper | 94 GB HBM3 | 3.9 | 3,958 | — | 400W | 600 GB/s | NVL Bridge |
-| **H200 SXM** | Hopper | 141 GB HBM3e | 4.8 | 3,958 | — | 700W | 900 GB/s | SXM5 |
-| **B200** | Blackwell | 192 GB HBM3e | 8.0 | 9,000 (dense) | 18,000 (dense) | 1,000W | 1.8 TB/s | SXM6 |
-| **GB200 (2×B200)** | Blackwell | 372 GB HBM3e | 16.0 | 20 PFLOPS | 40 PFLOPS | — | 3.6 TB/s | Superchip |
-| **GB200 NVL72** | Blackwell | ~13.5 TB HBM3e | — | 720 PFLOPS | 1,440 PFLOPS | — | 130 TB/s | Rack |
-| **B300** | Blackwell Ultra | 288 GB HBM3e | 8.0 | — | 30,000 (dense) | 1,400W | 1.8 TB/s | SXM6 |
+| GPU | Architecture | VRAM | Mem BW (TB/s) | FP8 (TFLOPS) | FP4 (TFLOPS) | TDP | NVLink BW | Form Factor |
+|-----|-------------|------|---------------|-------------|-------------|-----|-----------|-------------|
+| **H100 SXM5** | Hopper | 80 GB HBM3 | 3.35 | 3,958 (sparse) | — | 700W | 900 GB/s | SXM5 |
+| **H100 PCIe** | Hopper | 80 GB HBM2e | 2.0 | 3,026 (sparse) | — | 350W | 600 GB/s | PCIe |
+| **H100 NVL** | Hopper | 94 GB HBM3 | 3.9 | 3,958 (sparse) | — | 400W | 600 GB/s | NVL Bridge |
+| **H200 SXM** | Hopper | 141 GB HBM3e | 4.8 | 3,958 (sparse) | — | 700W | 900 GB/s | SXM5 |
+| **B200** | Blackwell | 192 GB HBM3e | 8.0 | 9,000 (sparse) | 18,000 (sparse) | 1,000W | 1.8 TB/s | SXM6 |
+| **GB200** (2×B200) | Blackwell | 372 GB HBM3e | 16.0 | 20 PFLOPS (sparse) | 40 PFLOPS (sparse) | — | 3.6 TB/s | Superchip |
+| **GB200 NVL72** | Blackwell | ~13.5 TB HBM3e | — | 720 PFLOPS (sparse) | 1,440 PFLOPS (sparse) | — | 130 TB/s | Rack |
+| **B300** | Blackwell Ultra | 288 GB HBM3e | 8.0 | — | 30,000 (sparse) | 1,400W | 1.8 TB/s | SXM6 |
 | **GB300 NVL72** | Blackwell Ultra | ~21 TB HBM3e | — | — | — | — | — | Rack |
 
-> **Reading the table:** FP8/FP4 values are Tensor Core throughput **with 2:4 structured sparsity** unless marked "dense". Dense values are exactly 1/2 of sparse values. See [Notes: Sparsity vs Dense](#notes).
+> **Reading the table:** All FP8/FP4 values are Tensor Core throughput **with 2:4 structured sparsity** unless marked otherwise. Dense values are exactly 1/2 of sparse values. See [Notes: Sparsity vs Dense](#sparsity-vs-dense) for details. PFLOPS = petaflops = 1,000 TFLOPS.
 
 ---
 
@@ -49,11 +49,13 @@
 | FP64 | 34 TFLOPS | — |
 | FP64 Tensor Core | 67 TFLOPS | — |
 | FP32 | 67 TFLOPS | — |
-| TF32 Tensor Core | 989 TFLOPS | 1,979 TFLOPS |
-| BF16 Tensor Core | 989 TFLOPS | 1,979 TFLOPS |
-| FP16 Tensor Core | 989 TFLOPS | 1,979 TFLOPS |
+| TF32 Tensor Core | 494.5 TFLOPS | 989 TFLOPS |
+| BF16 Tensor Core | 989.5 TFLOPS | 1,979 TFLOPS |
+| FP16 Tensor Core | 989.5 TFLOPS | 1,979 TFLOPS |
 | FP8 Tensor Core | 1,979 TFLOPS | 3,958 TFLOPS |
 | INT8 Tensor Core | 1,979 TOPS | 3,958 TOPS |
+
+> **Note on user-provided values:** The sparse figures above (989, 1,979, 3,958) match the user-specified "with sparsity" values. Dense values are derived as 1/2 of sparse per the user's note. Cross-reference with NVIDIA's official H100 datasheet Rev. 2 if higher precision is needed for a specific calculation.
 
 #### Connectivity & Power
 
@@ -137,8 +139,8 @@ Identical to H100 SXM5 — the compute engines are the same.
 | Precision | Dense | With 2:4 Sparsity |
 |-----------|-------|-------------------|
 | FP8 Tensor Core | 1,979 TFLOPS | 3,958 TFLOPS |
-| BF16/FP16 Tensor Core | 989 TFLOPS | 1,979 TFLOPS |
-| TF32 Tensor Core | 989 TFLOPS | 1,979 TFLOPS |
+| BF16/FP16 Tensor Core | 989.5 TFLOPS | 1,979 TFLOPS |
+| TF32 Tensor Core | 494.5 TFLOPS | 989 TFLOPS |
 
 #### Key Advantages over H100 SXM
 
@@ -211,7 +213,7 @@ Identical to H100 SXM5 — the compute engines are the same.
 | FP64 | 80 TFLOPS | — |
 | FP64 Tensor Core | 80 TFLOPS | — |
 
-> **Note:** PFLOPS = petaflops = 1,000 TFLOPS. GB200 combines Grace CPU compute with Blackwell GPU compute. CPU-only TFLOPS are modest; the value is in the unified memory architecture and CPU↔GPU NVLink-C2C bandwidth.
+> **Note:** GB200 combines Grace CPU compute with Blackwell GPU compute. CPU-only TFLOPS are modest; the value is in the unified memory architecture and CPU↔GPU NVLink-C2C bandwidth.
 
 ---
 
@@ -259,7 +261,7 @@ Identical to H100 SXM5 — the compute engines are the same.
 - Higher per-GPU memory (288 GB vs 192 GB on B200) enables larger models without disaggregation
 - Same NVLink 5 fabric as GB200 NVL72 but with upgraded GPU silicon
 
-> **Status:** GB300 is "Blackwell Ultra" generation. Specific per-GPU TFLOPS figures follow the B300 spec below.
+> **Status:** GB300 is "Blackwell Ultra" generation. Per-GPU TFLOPS figures follow the B300 spec below. Rack-level aggregate specs are preliminary.
 
 ---
 
@@ -278,7 +280,7 @@ Identical to H100 SXM5 — the compute engines are the same.
 | NVLink | 1.8 TB/s bidirectional (NVLink 5.0) |
 | Form Factor | SXM6 |
 
-> **Note:** B300 figures are preliminary/estimated based on available NVIDIA disclosures. Final specs may differ. B300 improves over B200 primarily through higher memory capacity (288 GB vs 192 GB) and ~50% higher FP4 throughput.
+> **Note:** B300 figures are **preliminary/estimated** based on available NVIDIA disclosures. Final specs may differ. B300 improves over B200 primarily through higher memory capacity (288 GB vs 192 GB) and ~50% higher FP4 throughput.
 
 ---
 
@@ -288,17 +290,17 @@ Identical to H100 SXM5 — the compute engines are the same.
 
 $$\text{BW Utilization (\%)} = \frac{\text{Operational Intensity (FLOPs/Byte)} \times \text{Achieved TFLOPS}}{\text{Peak Bandwidth (TB/s)} \times 1000} \times 100$$
 
-**Roofline model shortcut:**
+**Roofline model shortcut — Arithmetic Intensity Breakpoint:**
 
-$$\text{Arithmetic Intensity Breakpoint} = \frac{\text{Peak TFLOPS}}{\text{Peak TB/s}}$$
+$$\text{AI Breakpoint} = \frac{\text{Peak TFLOPS}}{\text{Peak TB/s}}$$
 
-| GPU | AI Breakpoint (FLOPs/Byte) |
-|-----|---------------------------|
-| H100 SXM5 | 3,958 / 3,350 ≈ 1.18 (FP8 sparse) |
-| H200 SXM | 3,958 / 4,800 ≈ 0.82 (FP8 sparse) |
-| B200 | 18,000 / 8,000 ≈ 2.25 (FP4 sparse) |
+| GPU | AI Breakpoint (FLOPs/Byte) | Notes |
+|-----|---------------------------|-------|
+| H100 SXM5 | 3,958 / 3,350 ≈ 1.18 | FP8 sparse |
+| H200 SXM | 3,958 / 4,800 ≈ 0.82 | FP8 sparse; lower breakpoint = more memory-bound |
+| B200 | 18,000 / 8,000 ≈ 2.25 | FP4 sparse |
 
-> **Interpretation:** If your kernel's operational intensity is below the breakpoint, it's memory-bound. If above, it's compute-bound.
+> **Interpretation:** If your kernel's operational intensity (FLOPs per byte of data moved) is below the breakpoint, it's memory-bound. If above, it's compute-bound. A lower breakpoint means the GPU hits the memory wall sooner.
 
 ### Converting Between Precision Throughputs
 
@@ -312,14 +314,30 @@ For Tensor Cores, the general hierarchy is:
 | FP16 vs TF32 | FP16 ≈ 2× TF32 (varies by architecture) |
 | BF16 vs FP16 | BF16 = FP16 (same throughput on Tensor Cores) |
 
+**Example — H100 SXM5 precision chain (sparse):**
+
+$$\text{TF32} = 989 \xrightarrow{\times 2} \text{BF16/FP16} = 1{,}979 \xrightarrow{\times 2} \text{FP8} = 3{,}958$$
+
+**Example — B200 precision chain (dense):**
+
+$$\text{BF16/FP16} = 2{,}250 \xrightarrow{\times 2} \text{FP8} = 4{,}500 \xrightarrow{\times 2} \text{FP4} = 9{,}000$$
+
 ### Estimating Memory-Bound Kernel Performance
 
-$$\text{Achievable throughput} = \text{Memory Bandwidth} \times \text{Bytes per FLOP}$$
+For a kernel that reads a weight matrix once per output element (e.g., linear layer inference):
 
-Example: A kernel that reads a weight matrix once per output (e.g., linear layer inference):
+$$\text{Achievable TFLOPS} = \text{Memory Bandwidth (TB/s)} \times \frac{1}{\text{Bytes per Element}}$$
 
-- H100 SXM5: 3.35 TB/s × (1 FP16 element = 2 bytes) = 1,675 TFLOPS achievable (memory-bound)
-- B200: 8.0 TB/s × (1 FP8 element = 1 byte) = 8,000 TFLOPS achievable
+| GPU | Precision | Bytes/Element | Achievable TFLOPS (memory-bound) |
+|-----|-----------|---------------|----------------------------------|
+| H100 SXM5 | FP16 | 2 | 3.35 × 500 = 1,675 |
+| H100 SXM5 | FP8 | 1 | 3.35 × 1,000 = 3,350 |
+| H200 SXM | FP16 | 2 | 4.8 × 500 = 2,400 |
+| H200 SXM | FP8 | 1 | 4.8 × 1,000 = 4,800 |
+| B200 | FP8 | 1 | 8.0 × 1,000 = 8,000 |
+| B200 | FP4 | 0.5 | 8.0 × 2,000 = 16,000 |
+
+> **Key insight:** H200's higher memory bandwidth (4.8 vs 3.35 TB/s) means memory-bound FP8 kernels achieve 4,800 TFLOPS — exceeding the H100's FP8 *sparse peak* (3,958 TFLOPS) even in dense mode. This is why H200 is preferred for inference-heavy workloads.
 
 ### Power Efficiency
 
@@ -327,9 +345,9 @@ $$\text{Perf/Watt} = \frac{\text{Achieved TFLOPS}}{\text{TDP (W)}}$$
 
 | GPU | FP8 Sparse TFLOPS/W | FP4 Dense TFLOPS/W |
 |-----|---------------------|---------------------|
-| H100 SXM5 | 5.65 | — |
-| B200 | 9.0 | 9.0 |
-| B300 (est.) | — | 10.7 |
+| H100 SXM5 | 3,958 / 700 ≈ 5.65 | — |
+| B200 | 9,000 / 1,000 = 9.0 | 9,000 / 1,000 = 9.0 |
+| B300 (est.) | — | 15,000 / 1,400 ≈ 10.7 |
 
 ---
 
@@ -337,43 +355,46 @@ $$\text{Perf/Watt} = \frac{\text{Achieved TFLOPS}}{\text{TDP (W)}}$$
 
 ### Sparsity vs Dense
 
-NVIDIA Tensor Cores support **2:4 structured sparsity**: for every 4 consecutive elements in a weight matrix, at least 2 must be zero. When enabled, the hardware processes the non-zero elements at **2× the dense throughput**. This is not free — the model must be pruned or trained with sparsity in mind. In practice:
+NVIDIA Tensor Cores support **2:4 structured sparsity**: for every 4 consecutive elements in a weight matrix, at least 2 must be zero. When enabled, the hardware processes the non-zero elements at **2× the dense throughput**. This is not free — the model must be pruned or trained with sparsity in mind.
 
-- **Dense values** are the "real" FLOPS you get without sparsity optimization
-- **Sparse values** are 2× dense and require 2:4 structured pruning to achieve
-- For **inference workloads**, dense values are typically the more relevant metric unless the model is specifically sparsity-optimized
-- For **training**, sparsity is harder to exploit and dense values dominate
+**Practical implications:**
 
-> **Rule of thumb:** If a spec sheet only shows one number, check whether it's dense or sparse. NVIDIA marketing often leads with sparse numbers.
+- **Dense values** are the "real" FLOPS you get without sparsity optimization. This is what most inference kernels achieve today.
+- **Sparse values** are 2× dense and require 2:4 structured pruning to achieve. Supported in TensorRT-LLM and vLLM with sparsity-enabled models.
+- For **inference workloads**, dense values are typically the more relevant metric unless the model is specifically sparsity-optimized.
+- For **training**, sparsity is harder to exploit and dense values dominate.
+- For **memory-bound kernels** (e.g., autoregressive decoding at small batch sizes), sparsity doesn't help because the bottleneck is memory bandwidth, not compute.
+
+> **Rule of thumb:** If a spec sheet only shows one number, check whether it's dense or sparse. NVIDIA marketing often leads with sparse numbers. When in doubt, use the dense value for conservative estimates.
 
 ### HBM Generations
 
-| Generation | Typical Bandwidth per Stack | Used In |
-|-----------|---------------------------|---------|
-| HBM2e | ~400 GB/s per stack | H100 PCIe |
-| HBM3 | ~800 GB/s per stack | H100 SXM5, H100 NVL |
-| HBM3e | ~1.2 TB/s per stack | H200, B200, B300, GB200 |
+| Generation | Typical BW per Stack | Used In | Notes |
+|-----------|---------------------|---------|-------|
+| HBM2e | ~400 GB/s per stack | H100 PCIe | 5 stacks × 400 GB/s ≈ 2.0 TB/s |
+| HBM3 | ~800 GB/s per stack | H100 SXM5, H100 NVL | 5 stacks × ~670 GB/s ≈ 3.35 TB/s |
+| HBM3e | ~1.2 TB/s per stack | H200, B200, B300, GB200 | 5 stacks × ~960 GB/s ≈ 4.8 TB/s (H200) |
 
 HBM3e provides ~50% more bandwidth per stack than HBM3, which is why H200 achieves 4.8 TB/s vs H100's 3.35 TB/s with the same compute die.
 
 ### NVLink Versions
 
-| Version | Bandwidth (bidirectional) | Introduced |
-|---------|--------------------------|------------|
-| NVLink 3.0 | 600 GB/s | A100 |
-| NVLink 4.0 | 900 GB/s | H100 SXM5 |
-| NVLink 5.0 | 1,800 GB/s (1.8 TB/s) | B200, GB200 |
+| Version | BW (bidirectional) | Introduced | Key Feature |
+|---------|-------------------|------------|-------------|
+| NVLink 3.0 | 600 GB/s | A100 | Third-gen, 12 links |
+| NVLink 4.0 | 900 GB/s | H100 SXM5 | Fourth-gen, 18 links |
+| NVLink 5.0 | 1,800 GB/s (1.8 TB/s) | B200, GB200 | Fifth-gen, NVLink-C2C for CPU↔GPU |
 
-NVLink 5.0 also introduced NVLink-Chip-to-Chip (NVLink-C2C) for CPU↔GPU connectivity at 900 GB/s in the Grace Blackwell superchip.
+NVLink 5.0 also introduced NVLink-Chip-to-Chip (NVLink-C2C) for CPU↔GPU connectivity at 900 GB/s in the Grace Blackwell superchip, enabling coherent unified memory between CPU and GPU.
 
 ### Form Factors
 
 | Form Factor | Description | Typical Use |
 |------------|-------------|-------------|
 | **PCIe** | Standard PCI Express card, air-cooled | Edge, on-prem servers |
-| **SXM5** | NVIDIA mezzanine module, liquid-cooled, NVLink switch | DGX, HGX, cloud |
+| **SXM5** | NVIDIA mezzanine module, liquid-cooled, NVLink switch | DGX H100, HGX H100, cloud |
 | **SXM6** | Next-gen mezzanine for Blackwell | DGX B200, HGX B200 |
-| **NVL** | Dual-GPU NVLink bridge pair | Large-model inference |
+| **NVL** | Dual-GPU NVLink bridge pair | Large-model inference (e.g., H100 NVL) |
 | **Superchip** | Grace CPU + Blackwell GPUs on one board | GB200 NVL systems |
 | **Rack (NVL72)** | Full rack with NVLink switch fabric | Frontier training/inference |
 
@@ -382,7 +403,7 @@ NVLink 5.0 also introduced NVLink-Chip-to-Chip (NVLink-C2C) for CPU↔GPU connec
 | Unit | Value |
 |------|-------|
 | 1 PFLOPS | 1,000 TFLOPS |
-| 1 EFLOPS | 1,000 PFLOPS |
+| 1 EFLOPS | 1,000 PFLOPS = 1,000,000 TFLOPS |
 | 1 TB/s | 1,000 GB/s |
 | 1 PB/s | 1,000 TB/s |
 
