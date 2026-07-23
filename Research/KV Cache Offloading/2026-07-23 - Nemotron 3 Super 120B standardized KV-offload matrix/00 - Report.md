@@ -25,7 +25,7 @@ The shared-memory and TieringOffloadingSpec controls are already present in all 
 | Configuration | Run | Result | Disposition |
 |---|---|---:|---|
 | No offload | [`5449807a753943dc9f9b5e69ff85cf69`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/5449807a753943dc9f9b5e69ff85cf69?workspace=benchflow) | 1.283 requests/s | Accept as initial HBM-only control; 15 requests cancelled at cutoff |
-| CPU 64 GiB | [`9addbda8d00b48dabe3da6019882a047`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/9addbda8d00b48dabe3da6019882a047?workspace=benchflow) | 1.293 requests/s | Accept as the capacity-matched CPU-offload control; implementation and `/dev/shm` still differ from tiered cells |
+| CPU 64 GiB | [`9addbda8d00b48dabe3da6019882a047`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/9addbda8d00b48dabe3da6019882a047?workspace=benchflow) | 1.293 requests/s | Accept as the capacity-matched CPU-offload control; shared memory and TieringOffloadingSpec are matched |
 | CPU 64 GiB + NVMe | [`9ee19ce289884e1faad9aeceec1190b6`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/9ee19ce289884e1faad9aeceec1190b6?workspace=benchflow) | 1.445 requests/s | Accept as proof of useful tiered readback; do not attribute gain to NVMe alone |
 | CPU 64 GiB + CephFS | [`0176063d739749ca84c408096e4c4594`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/258/runs/0176063d739749ca84c408096e4c4594?workspace=benchflow) | 1.200 requests/s | Directionally useful but reject as a clean storage comparison: direct reads unobserved and store-refusal tail present |
 
@@ -35,7 +35,7 @@ Run [`4f7779a03b444551984853b683852f7a`](https://mlflow.apps.psap-automation.ibm
 
 The controlled dimensions are strong: all four runs use `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8`, one replica, TP=4 on four H100s, `vllm/vllm-openai:v0.23.0` at image digest `sha256:3a1e7f…bdbe3ac0`, node `diadochos-hqxzk-gpu-h100-6kl5z`, `gpu-memory-utilization=0.64`, `max-model-len=131072`, prefix caching, AgentX MVP, the same WEKA repository, seed 42, concurrency 32, and a 1,800-second send window. Successful matched requests differ by only 2 prompt tokens at p95 between CPU64 and NVMe, and 2 between NVMe and CephFS. Workload-shape drift does not explain either gap.
 
-The important uncontrolled dimensions are:
+The controlled deployment dimensions are:
 
 | Configuration | Connector implementation | CPU bytes flag | Secondary tier | `/dev/shm` |
 |---|---|---:|---|---:|
@@ -44,7 +44,7 @@ The important uncontrolled dimensions are:
 | CPU 64 GiB + NVMe | `TieringOffloadingSpec` | 64 GiB | hostPath filesystem | 200 GiB |
 | CPU 64 GiB + CephFS | `TieringOffloadingSpec` | 64 GiB | `vllm-kv-cache` PVC | 200 GiB |
 
-Both tiered runs create one 68.69 GB shared mmap and report a primary LRU of 1,985 blocks. All four runs use the same `TieringOffloadingSpec`; CPU64 has no secondary tier. Mean model-container working set is 203.1 GiB for CPU64, 203.1 GiB for NVMe, and 203.1 GiB for CephFS, so effective host-memory footprint is closely matched. The remaining CPU-versus-NVMe confound is implementation plus `/dev/shm`, not capacity. CPU64 and NVMe both leave `PYTHONHASHSEED` unset; CephFS sets it to zero.
+Both tiered runs create one 68.69 GB shared mmap and report a primary LRU of 1,985 blocks. All four runs use the same `TieringOffloadingSpec`; CPU64 has no secondary tier. Mean model-container working set is 203.1 GiB for CPU64, 203.1 GiB for NVMe, and 203.1 GiB for CephFS, so effective host-memory footprint is closely matched. The remaining CPU-versus-NVMe difference is the secondary-tier path, not shared-memory capacity. CPU64 and NVMe both leave `PYTHONHASHSEED` unset; CephFS sets it to zero.
 
 The EPP also auto-created the **approximate** prefix producer in every run. With one backend replica, placement has no alternative destination, so this does not explain the performance difference; it does mean this batch cannot measure precise-EPP routing gains.
 
