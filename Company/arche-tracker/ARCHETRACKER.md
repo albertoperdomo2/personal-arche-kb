@@ -12,6 +12,8 @@ Features, bugs, and known issues for [Arche](https://github.com/opencode-ai/arch
 | F-002 | Add support for secrets / ENV vars in flows | Planned | P2 | Allow flows to reference secrets or ENV vars so they can fetch gated external data (APIs, private repos, etc.) without hardcoding credentials. |
 | F-003 | Public unauthenticated sharing of artifacts | Planned | P2 | Admin users can manually mark artifacts for public sharing. Renders a simple markdown view with a permanent link. No auth required for consumers. |
 | F-004 | Export KB documents as PDF or HTML | Planned | P3 | Allow exporting knowledge base articles to PDF or standalone HTML files for offline reading, sharing, or archival. |
+| F-005 | Name sessions / chats | Planned | P2 | Allow users to manually name sessions or let the model auto-generate a name. Makes it easier to find and reference past conversations. |
+| F-006 | Stop flow execution manually | Planned | P1 | Allow users to cancel a running flow mid-execution. Currently flows run to completion with no way to abort. |
 
 ## Bugs
 
