@@ -25,6 +25,8 @@ Distributed inference / serving. Performance and scalability work as part of the
 
 - 2026-07-22: The precise-prefix-cache deployment in run `20dff480377b47ab98485f59ae105ca5` failed before benchmarking. The workload command is launched through an image-provided `eval`; its rendered `--kv-events-config={"..."}` loses JSON double quotes during that second shell parse, so vLLM receives `{enable_kv_cache_events: ...}` and crashes with `Invalid JSON: key must be a string`. The same run also shows the EPP tokenizer configured with `/mnt/models/base/model`, which lacks `config.json`; after correcting KV JSON escaping, the EPP mount path must be corrected too.
 
+- 2026-07-23: Implemented the precise-prefix-cache rendering corrections. The KV-events value now retains literal single-quote shell grouping around the JSON so the serving image's `eval` passes valid JSON to vLLM, and cached-model EPP tokenization now maps `base` to `/mnt/models/base` rather than the invalid nested `/mnt/models/base/model`. Focused profile tests (53), Ruff, and diff checks pass; a cluster rerun remains required.
+
 ## Launch from GitHub
 For a cluster with an RWX-capable storage class:
 
