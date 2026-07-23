@@ -10,7 +10,7 @@ model: Nemotron 3 Super 120B
 
 ## Executive conclusion
 
-These four runs show a **real offload staircase**. CPU 64 GiB is already highly effective, raising request throughput +0.7% over no offload. CPU64+NVMe is fastest and adds +11.8% over CPU64; CPU64+CephFS remains well ahead of no offload but is -7.2% versus CPU64 and -16.9% versus NVMe. CPU capacity is now matched at 64 GiB, but CPU-only still uses default `CPUOffloadingSpec` with 1 GiB `/dev/shm`, while the filesystem cells use `TieringOffloadingSpec` with 200/128 GiB `/dev/shm`. The batch proves useful CPU and tiered offload, but not an isolated storage-medium effect.
+These four runs show a **real offload staircase**. CPU 64 GiB is already highly effective, raising request throughput +0.7% over no offload. CPU64+NVMe is fastest and adds +11.8% over CPU64; CPU64+CephFS remains well ahead of no offload but is -7.2% versus CPU64 and -16.9% versus NVMe. CPU capacity is now matched at 64 GiB, but all four runs use 200 GiB `/dev/shm` and the same `TieringOffloadingSpec`; CPU64 has no secondary tier, NVMe uses hostPath NVMe, and CephFS uses the PVC. This removes the shared-memory confound.
 
 - **No offload:** 1.283 requests/s, 907.7 output tokens/s, mean TTFT 1.582 s, mean E2E 22.431 s, and 43 completed sessions.
 - **CPU 64 GiB:** 1.293 requests/s (+0.7% versus no offload), 918.0 output tokens/s, mean TTFT 1.476 s, mean E2E 21.291 s, and 43 completed sessions. External KV supplied 20.86% of prompt tokens. This is a **successful CPU-offload point**.
@@ -18,7 +18,7 @@ These four runs show a **real offload staircase**. CPU 64 GiB is already highly 
 - **CPU 64 GiB + CephFS:** 1.200 requests/s (-6.5% versus no offload, -16.9% versus NVMe), mean TTFT 2.159 s, mean E2E 27.294 s, and 40 completed sessions. Its retained model-log tail contains at least 126,998 `cannot store blocks` warnings across 524 request IDs.
 - All model pods had **zero restarts**, zero preemptions, zero CUDA OOMs, zero missing-parent errors, and zero server tracebacks. Every configuration except CPU64 has one isolated client `ServerDisconnectedError`; that is not the performance mechanism.
 
-The immediate experiment-design correction is to add a **CPU 64 GiB `TieringOffloadingSpec` cell with the same `/dev/shm` and no secondary tier**, then repeat NVMe and CephFS with identical 200 GiB `/dev/shm`, `PYTHONHASHSEED=0`, and clean run-scoped storage. Until that control exists, this batch proves **useful tiering and a CephFS regression**, not an isolated NVMe uplift.
+The shared-memory and TieringOffloadingSpec controls are already present in all four runs. The remaining comparison is secondary-tier behavior: none versus NVMe hostPath versus CephFS PVC.
 
 ## Run registry and disposition
 
@@ -39,12 +39,12 @@ The important uncontrolled dimensions are:
 
 | Configuration | Connector implementation | CPU bytes flag | Secondary tier | `/dev/shm` |
 |---|---|---:|---|---:|
-| No offload | none | — | none | 1 GiB |
-| CPU 64 GiB | default `CPUOffloadingSpec` | 64 GiB | none | 1 GiB |
+| No offload | `TieringOffloadingSpec` | 64 GiB | none | 200 GiB |
+| CPU 64 GiB | `TieringOffloadingSpec` | 64 GiB | none | 200 GiB |
 | CPU 64 GiB + NVMe | `TieringOffloadingSpec` | 64 GiB | hostPath filesystem | 200 GiB |
-| CPU 64 GiB + CephFS | `TieringOffloadingSpec` | 64 GiB | `vllm-kv-cache` PVC | 128 GiB |
+| CPU 64 GiB + CephFS | `TieringOffloadingSpec` | 64 GiB | `vllm-kv-cache` PVC | 200 GiB |
 
-Both tiered runs create one 68.69 GB shared mmap and report a primary LRU of 1,985 blocks. The CPU-only run instead initializes `CPUOffloadingSpec` independently in all four TP workers. Mean model-container working set is 203.1 GiB for CPU64, 203.1 GiB for NVMe, and 203.1 GiB for CephFS, so effective host-memory footprint is closely matched. The remaining CPU-versus-NVMe confound is implementation plus `/dev/shm`, not capacity. CPU64 and NVMe both leave `PYTHONHASHSEED` unset; CephFS sets it to zero.
+Both tiered runs create one 68.69 GB shared mmap and report a primary LRU of 1,985 blocks. All four runs use the same `TieringOffloadingSpec`; CPU64 has no secondary tier. Mean model-container working set is 203.1 GiB for CPU64, 203.1 GiB for NVMe, and 203.1 GiB for CephFS, so effective host-memory footprint is closely matched. The remaining CPU-versus-NVMe confound is implementation plus `/dev/shm`, not capacity. CPU64 and NVMe both leave `PYTHONHASHSEED` unset; CephFS sets it to zero.
 
 The EPP also auto-created the **approximate** prefix producer in every run. With one backend replica, placement has no alternative destination, so this does not explain the performance difference; it does mean this batch cannot measure precise-EPP routing gains.
 
