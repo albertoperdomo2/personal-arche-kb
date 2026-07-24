@@ -10,7 +10,5 @@ topic: KV Cache Offloading
 
 ## Reports
 
-- [[2026-07-23 - Qwen3.6 AgentX cleaned TieringOffloadingSpec matrix/00 - Report|2026-07-23 — Clean TieringOffloadingSpec matrix]]
-- [[2026-07-23 - Qwen3.6 AgentX cleaned TieringOffloadingSpec matrix/01 - Summary|2026-07-23 — Matrix summary]]
-
-Historical Qwen/AgentX CephFS mechanism notes remain in the theme-level legacy set until their source model identity is confirmed.
+- [[2026-07-23 - TieringOffloadingSpec matrix|2026-07-23 — Clean TieringOffloadingSpec matrix]]
+- [[2026-07-23 - TieringOffloadingSpec matrix Summary|2026-07-23 — Matrix summary]]
