@@ -21,6 +21,26 @@ These four baseline runs plus the tuned CephFS follow-up show a **real offload s
 
 The four deployments now hold `/dev/shm`, CPU capacity, TieringOffloadingSpec, model, and workload shape constant across the offload cells. The no-offload baseline is an older U=0.55/C=32 control on the other H100 node, so the cleanest causal comparison is CPU64 versus NVMe versus CephFS; baseline deltas remain directional.
 
+## Five-way comparison including tuned CephFS
+
+The tuned CephFS run is now included directly in the comparison, not treated only as a follow-up. It removes the prior CephFS store-refusal behavior and reaches the same performance range as NVMe.
+
+| Configuration | Throughput (requests/s) | Mean TTFT (s) | Mean E2E (s) | Completed requests |
+|---|---:|---:|---:|---:|
+| No offload | 0.578 | 32.968 | 50.511 | 26 sessions |
+| CPU 64 GiB | 1.191 | 14.539 | 25.439 | 41 sessions |
+| CPU 64 GiB + NVMe | 1.284 | 10.572 | 20.287 | 44 sessions |
+| CPU 64 GiB + CephFS (prior) | 0.711 | 20.579 | 32.841 | 29 sessions |
+| CPU 64 GiB + CephFS (tuned) | 1.300 | 10.495 | 20.129 | 2,363 requests / 44 sessions |
+
+Figure 22 compares all five observations. Provenance: AIPerf profile exports from the original four-cell matrix plus tuned CephFS run `839fd11f9d6f4c1f9dac45e41314c8d1`.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":340,"title":"Figure 22 — Five-way Qwen offload comparison","data":{"values":[{"configuration":"No offload","metric":"Throughput","value":0.578,"unit":"requests/s"},{"configuration":"CPU 64 GiB","metric":"Throughput","value":1.191,"unit":"requests/s"},{"configuration":"CPU 64 GiB + NVMe","metric":"Throughput","value":1.284,"unit":"requests/s"},{"configuration":"CPU 64 GiB + CephFS (prior)","metric":"Throughput","value":0.711,"unit":"requests/s"},{"configuration":"CPU 64 GiB + CephFS (tuned)","metric":"Throughput","value":1.300,"unit":"requests/s"},{"configuration":"No offload","metric":"Mean E2E","value":50.511,"unit":"s"},{"configuration":"CPU 64 GiB","metric":"Mean E2E","value":25.439,"unit":"s"},{"configuration":"CPU 64 GiB + NVMe","metric":"Mean E2E","value":20.287,"unit":"s"},{"configuration":"CPU 64 GiB + CephFS (prior)","metric":"Mean E2E","value":32.841,"unit":"s"},{"configuration":"CPU 64 GiB + CephFS (tuned)","metric":"Mean E2E","value":20.129,"unit":"s"}]},"mark":"bar","encoding":{"x":{"field":"configuration","type":"nominal","title":"Configuration","sort":["No offload","CPU 64 GiB","CPU 64 GiB + NVMe","CPU 64 GiB + CephFS (prior)","CPU 64 GiB + CephFS (tuned)"]},"y":{"field":"value","type":"quantitative","title":"Metric value (requests/s or seconds)","scale":{"zero":true}},"xOffset":{"field":"metric","type":"nominal","title":"Metric"},"color":{"field":"metric","type":"nominal","title":"Metric","scale":{"scheme":"category10"}},"tooltip":[{"field":"configuration","type":"nominal","title":"Configuration"},{"field":"metric","type":"nominal","title":"Metric"},{"field":"value","type":"quantitative","title":"Value"},{"field":"unit","type":"nominal","title":"Unit"}]},"config":{"view":{"stroke":null}}}
+```
+
+The tuned CephFS point is +82.9% above the prior CephFS run, +9.2% above CPU64, and +1.2% above the prior NVMe point in request throughput. Its mean E2E latency is 38.7% below prior CephFS, 20.9% below CPU64, and 0.8% below NVMe. These are single-run comparisons; replication is still required.
+
 ## Run registry and disposition
 
 | Configuration | Run | Result | Disposition |
