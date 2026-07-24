@@ -268,3 +268,22 @@ Do **not** lower U or increase concurrency yet. U=0.55 leaves approximately 11.2
 - Report generator: `/private/tmp/kv-cache-experiments/generate_experiment_258_report.py`
 - All time-series figures use the finest retained 15-second cadence unless explicitly stated otherwise.
 - Inline Vega-Lite data are local arrays; every chart uses a white background and Category10 colors.
+
+
+## Tuned CephFS follow-up — 2026-07-24
+
+Run [`839fd11f9d6f4c1f9dac45e41314c8d1`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/839fd11f9d6f4c1f9dac45e41314c8d1?workspace=benchflow) repeats the Qwen CephFS point after the Ceph 200G PCI-passthrough migration described in [Routing Ceph over 200G NICs on OCP with PCI passthrough VFs](https://arche.albertoperdomo.me/w/admin?mode=knowledge&path=Engineering/Learnings/Routing+Ceph+over+200G+NICs+on+OCP+with+PCI+passthrough+VFs.md).
+
+The deployment is now explicitly tuned for the CephFS path: `TieringOffloadingSpec`, 64 GiB CPU tier, CephFS root `/mnt/kv_cache`, `n_read_threads=64`, `n_write_threads=32`, `PYTHONHASHSEED=0`, TP=2, `gpu-memory-utilization=0.55`, concurrency 32, and 200 GiB `/dev/shm`. The run used the same Qwen AgentX profile and seed as the prior matrix.
+
+The tuned run completed **2,363 requests with zero errors** and 44 sessions. It achieved **1.300 req/s**, **936.0 output tokens/s**, mean TTFT **10.495 s**, p95 TTFT **21.638 s**, mean E2E **20.129 s**, p95 E2E **45.133 s**, and mean ITL **13.694 ms**. Compared with the prior CephFS run (0.711 req/s, 20.579 s mean TTFT, 32.841 s mean E2E), this is approximately **+82.9% throughput**, **49.0% lower mean TTFT**, and **38.7% lower mean E2E**. It is also slightly faster than the prior NVMe point (1.284 req/s), although the comparison remains single-run and should be replicated.
+
+Figure 21 summarizes the request-throughput and mean-latency change. Provenance: AIPerf profile exports from the prior CephFS point, prior NVMe point, and tuned CephFS run; the tuned run is the only new observation.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":320,"title":"Figure 21 — Tuned CephFS versus prior offload points","data":{"values":[{"configuration":"CPU 64 GiB + CephFS (prior)","metric":"Request throughput","value":0.711,"unit":"requests/s"},{"configuration":"CPU 64 GiB + NVMe","metric":"Request throughput","value":1.284,"unit":"requests/s"},{"configuration":"CPU 64 GiB + CephFS (tuned)","metric":"Request throughput","value":1.300,"unit":"requests/s"},{"configuration":"CPU 64 GiB + CephFS (prior)","metric":"Mean E2E latency","value":32.841,"unit":"s"},{"configuration":"CPU 64 GiB + NVMe","metric":"Mean E2E latency","value":20.287,"unit":"s"},{"configuration":"CPU 64 GiB + CephFS (tuned)","metric":"Mean E2E latency","value":20.129,"unit":"s"}]},"mark":"bar","encoding":{"x":{"field":"configuration","type":"nominal","title":"Configuration"},"y":{"field":"value","type":"quantitative","title":"Metric value (requests/s or seconds)","scale":{"zero":true}},"color":{"field":"metric","type":"nominal","title":"Metric","scale":{"scheme":"category10"}},"column":{"field":"metric","type":"nominal","title":"Metric"},"tooltip":[{"field":"configuration","type":"nominal","title":"Configuration"},{"field":"metric","type":"nominal","title":"Metric"},{"field":"value","type":"quantitative","title":"Value"}]},"config":{"view":{"stroke":null}}}
+```
+
+The mechanism evidence is substantially healthier. The model log contains no `cannot store blocks` flood, no traceback, no CUDA OOM, and no restart. The Ceph-specific Prometheus archives, however, still contain empty Ceph pool/MDS series and the PVC-used gauge remains zero, so this run demonstrates **performance recovery after the network/thread tuning**, not direct CephFS byte-level proof. The 200G learning explains why this is plausible: Ceph daemons and the host CephFS client now use the 200G fabric instead of the approximately 10G OVN path, while MON control traffic may remain on management networking.
+
+The causal conclusion is therefore: the prior CephFS regression was primarily a CephFS data-path/drain configuration problem, not an AgentX workload-shape problem. The new read/write thread settings plus 200G routing removed the observed store-admission failure and restored throughput to the NVMe range. The next acceptance gate is three paired repetitions with direct Ceph client/MDS/OSD bytes, operation latency, queue depth, and PVC growth telemetry.
