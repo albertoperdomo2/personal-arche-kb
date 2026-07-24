@@ -1,3 +1,11 @@
+---
+title: AgentX C32 U0.55 vLLM 0.23 tier matrix
+date: 2026-07-21
+type: research-report
+model: Multiple/unspecified
+topic: KV Cache Offloading
+---
+
 # 2026-07-21 — AgentX C32 U0.55 vLLM 0.23 offload-tier matrix
 
 ## Executive conclusion
