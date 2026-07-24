@@ -32,7 +32,7 @@ Only 1 active MDS with 500m–2 CPU and 1–4 GiB memory. MDS is single-threaded
 
 ### 4. No CephFS client mount options
 
-Default `atime` updates generated unnecessary write traffic on every read. Default `rsize`/`wsize` buffers (16 MiB kernel default, but potentially lower in some CSI configurations) were untuned. No readahead optimization.
+Default `atime` updates generated unnecessary write traffic on every read. Default `rsize`/`wsize` buffers were untuned. No readahead optimization.
 
 **Fix:** Add StorageClass `mountOptions: [noatime, nodiratime, wsize=16777216, rsize=16777216]`. Set `client_readahead_max_bytes` to 32 MiB and `client_cache_size` to 65536 via `ceph config set`.
 
@@ -54,7 +54,7 @@ CephFS write latency → CPU primary tier fills faster than it drains → vLLM s
 
 ## Changes applied (2026-07-24)
 
-All changes applied to the diadochos cluster manifests in `clusters/psap-diadochos-h100/rook-ceph/`:
+All changes applied to the diadochos cluster manifests in `clusters/psap-diadochos-h100/rook-ceph/` and live on the cluster.
 
 | File | Change |
 |------|--------|
@@ -68,28 +68,66 @@ BenchFlow deployment profile change:
 |------|--------|
 | `profiles/deployment/rhoai/multi-tier-offloading-cephfs.yaml` | `n_read_threads: 64`, `n_write_threads: 32` |
 
-## Runtime commands (apply once via tools pod)
+## Runtime commands applied via tools pod
 
 ```bash
-ceph config set osd osd_memory_target 8589934592
-ceph config set osd bdev_async_discard_threads 1
-ceph config set mds mds_cache_memory_limit 4294967296
-ceph config set client client_readahead_max_bytes 33554432
+ceph config set osd osd_memory_target 8589934592          # 8 GiB
+ceph config set osd bdev_async_discard_threads 1           # Squid bug workaround
+ceph config set osd ms_async_op_threads 5                  # Network I/O threads (was 3)
+ceph config set mds mds_cache_memory_limit 4294967296      # 4 GiB
+ceph config set client client_readahead_max_bytes 33554432 # 32 MiB
 ceph config set client client_cache_size 65536
-```
-
-If data pool was previously `size: 3`:
-
-```bash
 ceph osd pool set kvcache-fs-data0 size 1 --yes-i-really-mean-it
 ceph osd pool set kvcache-fs-data0 min_size 1
+ceph health mute POOL_NO_REDUNDANCY
 ```
+
+## Networking investigation (2026-07-24)
+
+### Current state
+
+All Ceph traffic (OSD, MDS, client) runs over the OVN pod overlay at MTU 1400 via the management NIC. Each node has 8× ConnectX-7 200 Gbps RDMA NICs (mlx5_0–mlx5_7, `enp163s0`–`enp233s0`) that are:
+
+- Linked at **200 Gb/sec (4X HDR)**
+- All on the shared `10.0.0.0/16` subnet with cross-node reachability verified (sub-ms latency)
+- **Zero RDMA traffic** — RDMA port counters show 0 bytes transmitted/received
+- NICs support up to **MTU 9978** (currently set to 1500)
+
+Multus CNI is deployed on the cluster. The CephCluster has no custom network configuration.
+
+### Opportunity: Multus-based 200G Ceph network
+
+Routing Ceph traffic over the 200G NICs is the single biggest remaining optimization — a potential ~160× bandwidth increase for cross-node Ceph operations. The path:
+
+1. Raise MTU to 9000 on `enp163s0` (all 3 nodes)
+2. Create a macvlan `NetworkAttachmentDefinition` in `rook-ceph` on `enp163s0`
+3. Update CephCluster with `spec.network.provider: multus` and `spec.network.selectors.public`
+4. Attach the same Multus network to vLLM pods (CephFS kernel client needs to reach OSDs on the 200G addresses)
+
+**Risks:** Step 3 restarts all Ceph daemons. Both Ceph pods and CephFS client pods need the secondary interface. If the macvlan network has issues, Ceph could lose quorum.
+
+**Mitigation:** With `size: 1`, a per-host CRUSH rule can pin data to the local node, eliminating cross-node data traffic entirely. Multus is then only needed for MDS metadata (small volume).
+
+### Alternative: same-node CRUSH rule
+
+Since benchmarks are pinned to specific nodes and the data pool uses `size: 1`:
+
+```bash
+# Example for pinning data to fx7c8
+ceph osd crush rule create-replicated kvcache-local default host nvme
+ceph osd pool set kvcache-fs-data0 crush_rule kvcache-local
+```
+
+This turns every CephFS data write into a local NVMe write with zero network overhead. The tradeoff is that RWX reads from other nodes would still work but with a network hop, and only 1/3 of total NVMe capacity is available. For KV cache (a few TB at most), capacity is not a concern.
 
 ## Further opportunities not yet applied
 
-- **Same-node CRUSH rule**: Pin `kvcache-fs-data0` to OSDs on the node running the vLLM pod. Combined with `size: 1`, every CephFS write becomes a local NVMe write with zero network overhead. Tradeoff: RWX reads from other nodes add a network hop.
-- **GPUDirect Storage (GDS)**: CephFS does not support `O_DIRECT`, so full GDS bypass is not available. The `bb_read_write` bounce-buffer mode may still help but is unverified.
-- **Erasure coding**: Lower storage overhead than replication with less write amplification, but adds CPU overhead and complicates CephFS data pool configuration.
+- **Same-node CRUSH rule**: eliminates cross-node data traffic entirely (see above)
+- **Multus 200G networking**: route all Ceph traffic over 200 Gbps RDMA NICs
+- **Jumbo frames**: 200G NICs support MTU 9978; raising from 1500 to 9000 reduces per-packet overhead
+- **RDMA messenger**: Ceph supports `ms_type = async+rdma` for zero-copy RDMA messaging over the ConnectX-7 NICs
+- **GPUDirect Storage (GDS)**: CephFS does not support `O_DIRECT`, so full GDS bypass is unavailable; `bb_read_write` bounce-buffer mode is unverified
+- **Erasure coding**: lower storage overhead than replication with less write amplification, but adds CPU overhead
 
 ## Related
 
