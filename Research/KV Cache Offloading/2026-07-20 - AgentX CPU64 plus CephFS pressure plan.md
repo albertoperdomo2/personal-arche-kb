@@ -1,3 +1,11 @@
+---
+title: AgentX CPU64 plus CephFS pressure plan
+date: 2026-07-20
+type: research-plan
+model: Multiple/unspecified
+topic: KV Cache Offloading
+---
+
 # AgentX CPU64 + CephFS pressure plan
 
 Date: 2026-07-20
