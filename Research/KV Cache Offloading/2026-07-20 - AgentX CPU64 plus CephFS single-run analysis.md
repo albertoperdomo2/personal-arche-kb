@@ -1,3 +1,11 @@
+---
+title: AgentX CPU64 plus CephFS single-run analysis
+date: 2026-07-20
+type: research-report
+model: Multiple/unspecified
+topic: KV Cache Offloading
+---
+
 # 2026-07-20 — AgentX CPU64 + CephFS single-run mechanism audit
 
 - MLflow run: [d2c57cdc56084c4193d71bfb8e1cfdfb](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/d2c57cdc56084c4193d71bfb8e1cfdfb?workspace=benchflow)
