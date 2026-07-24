@@ -1,3 +1,11 @@
+---
+title: Initial AgentX offloading tier analysis
+date: 2026-07-17
+type: research-note
+model: Multiple/unspecified
+topic: KV Cache Offloading
+---
+
 # 2026-07-17 — Initial AgentX offloading tier analysis
 
 **Experiment:** [[00 - Index|KV Cache Offloading]]  
@@ -218,4 +226,3 @@ Reject any run with:
 3. Compare TTFT, E2E, recomputed prompt tokens, external-KV tokens, queueing, and cache-source distributions before emphasizing RPS.
 4. Only tune NVMe threads or hardware if device busy approaches the acceptance threshold.
 5. Update [[00 - Index|the experiment index]] after every accepted/rejected run batch and whenever the working conclusion changes.
-
