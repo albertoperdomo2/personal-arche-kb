@@ -4,7 +4,6 @@ date: 2026-07-24
 type: learning
 cluster: diadochos
 ---
-
 # Routing Ceph over 200G NICs on OCP with PCI passthrough VFs
 
 Ceph data traffic on the diadochos OCP cluster was migrated from the ~10 Gbps OVN overlay (management NIC) to the 200 Gbps ConnectX-7 NICs. This required a big-bang MON migration with ~15 minutes of CephFS downtime. Three earlier approaches failed, two of them breaking the cluster and requiring monmap repair.
@@ -23,19 +22,23 @@ Route all Ceph data-path traffic (OSD replication, client-to-OSD, client-to-MDS)
 
 ### Network topology
 
-| Network | Interface | Subnet | Speed | MTU | Used by |
-|---------|-----------|--------|-------|-----|---------|
-| OVN overlay (management) | `enp3s0` via `br-ex` | 10.243.65.0/24 | ~10 Gbps | ~1400 | Kubernetes pods, node communication |
-| 200G fabric (data) | `enp163s0`–`enp233s0` | 10.0.0.0/16 – 10.7.0.0/16 | 200 Gbps | 9000 | PCI passthrough VFs from hypervisor |
+
+| Network                  | Interface             | Subnet                    | Speed    | MTU   | Used by                             |
+| ------------------------ | --------------------- | ------------------------- | -------- | ----- | ----------------------------------- |
+| OVN overlay (management) | `enp3s0` via `br-ex`  | 10.243.65.0/24            | ~10 Gbps | ~1400 | Kubernetes pods, node communication |
+| 200G fabric (data)       | `enp163s0`–`enp233s0` | 10.0.0.0/16 – 10.7.0.0/16 | 200 Gbps | 9000  | PCI passthrough VFs from hypervisor |
+
 
 ### 200G NIC IPs (enp163s0)
 
-| Node | Management IP | 200G IP | Ceph role |
-|------|--------------|---------|-----------|
-| fx7c8 | 10.243.65.5 | 10.0.0.6 | MON-e, 7 OSDs |
-| mt46x | 10.243.65.7 | 10.0.0.7 | 7 OSDs |
-| 6kl5z | 10.243.65.9 | 10.0.0.4 | MON-l, 7 OSDs |
-| gjfjh | 10.243.65.15 | 10.0.0.8 | MON-k, MGR, MDS, operator |
+
+| Node  | Management IP | 200G IP  | Ceph role                 |
+| ----- | ------------- | -------- | ------------------------- |
+| fx7c8 | 10.243.65.5   | 10.0.0.6 | MON-e, 7 OSDs             |
+| mt46x | 10.243.65.7   | 10.0.0.7 | 7 OSDs                    |
+| 6kl5z | 10.243.65.9   | 10.0.0.4 | MON-l, 7 OSDs             |
+| gjfjh | 10.243.65.15  | 10.0.0.8 | MON-k, MGR, MDS, operator |
+
 
 ### Key constraint: PCI passthrough VFs
 
@@ -54,6 +57,7 @@ Created a `NetworkAttachmentDefinition` to give Ceph pods a second interface on 
 **Why it failed**: Host cannot ARP-resolve its own ipvlan children — fundamental Linux kernel limitation. The host sends ARP for the ipvlan child IP and gets zero responses. This breaks the CephFS kernel client → OSD path since the kernel client runs in the host network namespace and must reach OSD pods directly.
 
 Also tested:
+
 - **ipvlan L3 mode**: Same limitation at a different layer
 - **Separate subnet (192.168.200.0/24)**: OVN hijacked routing — `ip route get 192.168.200.x` went through `br-ex` instead of `enp163s0`
 
@@ -73,12 +77,14 @@ Set `public_network = 10.243.65.0/24` so Ceph binds to the management IP (reacha
 
 **Why it failed**: OCP's OVN firewall blocks pod-to-nodeIP traffic on non-standard ports. Confirmed with `nc -zv`:
 
-| Port | Service | Cross-node from pod |
-|------|---------|-------------------|
-| 22 | SSH | Reachable |
-| 6789 | MON v1 | Blocked |
-| 3300 | MON v2 | Blocked |
-| 6800+ | OSD/MDS | Blocked |
+
+| Port  | Service | Cross-node from pod |
+| ----- | ------- | ------------------- |
+| 22    | SSH     | Reachable           |
+| 6789  | MON v1  | Blocked             |
+| 3300  | MON v2  | Blocked             |
+| 6800+ | OSD/MDS | Blocked             |
+
 
 IBM Cloud VPC security groups add a second layer of blocking on the same ports.
 
@@ -109,6 +115,7 @@ oc patch driver.csi.ceph.io -n rook-ceph rook-ceph.cephfs.csi.ceph.com --type me
 ```
 
 Updated `02-ceph-cluster.yaml`:
+
 ```yaml
 network:
   provider: host
@@ -122,24 +129,21 @@ cephVersion:
 ### Phase 1: MON migration (service disruption begins)
 
 1. Scale operator to 0:
-   ```bash
+  ```bash
    oc scale deploy -n rook-ceph rook-ceph-operator --replicas=0
-   ```
-
+  ```
 2. Set public_network in Ceph config:
-   ```bash
+  ```bash
    oc exec -n rook-ceph deploy/rook-ceph-tools -- \
      ceph config set global public_network 10.0.0.0/16
-   ```
-
+  ```
 3. Scale all MONs to 0:
-   ```bash
+  ```bash
    oc scale deploy -n rook-ceph rook-ceph-mon-h rook-ceph-mon-i --replicas=0
    oc scale deploy -n rook-ceph rook-ceph-mon-e --replicas=0
-   ```
-
+  ```
 4. Monmap repair via privileged pod on fx7c8 (mount `/var/lib/rook/mon-e`):
-   ```bash
+  ```bash
    ceph-mon --extract-monmap /tmp/monmap --mon-data /var/lib/rook/mon-e/data
    monmaptool /tmp/monmap --rm h
    monmaptool /tmp/monmap --rm i
@@ -147,24 +151,21 @@ cephVersion:
    monmaptool /tmp/monmap --addv e [v2:10.0.0.6:3300/0,v1:10.0.0.6:6789/0]
    monmaptool /tmp/monmap --print  # verify
    ceph-mon --inject-monmap /tmp/monmap --mon-data /var/lib/rook/mon-e/data
-   ```
-
+  ```
 5. Update ConfigMap `rook-ceph-mon-endpoints`:
-   ```bash
+  ```bash
    oc patch configmap -n rook-ceph rook-ceph-mon-endpoints --type merge \
      -p '{"data":{"data":"e=10.0.0.6:6789","csi-cluster-config-json":"[{\"clusterID\":\"rook-ceph\",\"monitors\":[\"10.0.0.6:6789\"]}]","mapping":"{\"node\":{\"e\":{\"Name\":\"diadochos-hqxzk-gpu-h100-fx7c8\",\"Hostname\":\"diadochos-hqxzk-gpu-h100-fx7c8\",\"Address\":\"10.0.0.6\"}}}"}}'
-   ```
-
+  ```
 6. Update Secret `rook-ceph-config`:
-   ```bash
+  ```bash
    MON_HOST=$(echo -n '[v2:10.0.0.6:3300,v1:10.0.0.6:6789]' | base64)
    MON_MEMBERS=$(echo -n 'e' | base64)
    oc patch secret -n rook-ceph rook-ceph-config --type merge \
      -p "{\"data\":{\"mon_host\":\"$MON_HOST\",\"mon_initial_members\":\"$MON_MEMBERS\"}}"
-   ```
-
+  ```
 7. Patch MON-e deployment — add hostNetwork and fix bind addresses:
-   ```bash
+  ```bash
    # Get current args, replace --public-addr and --public-bind-addr with 200G IP
    # Remove: --public-addr=172.30.181.75 (old ClusterIP)
    # Remove: --public-bind-addr=$(ROOK_POD_IP) (resolves to management IP)
@@ -172,14 +173,12 @@ cephVersion:
    oc patch deploy -n rook-ceph rook-ceph-mon-e --type strategic \
      -p '{"spec":{"template":{"spec":{"hostNetwork":true,"dnsPolicy":"ClusterFirstWithHostNet"}}}}'
    # Then JSON patch the container args (see gotcha #1 below)
-   ```
-
+  ```
 8. Scale MON-e back up and verify:
-   ```bash
+  ```bash
    oc scale deploy -n rook-ceph rook-ceph-mon-e --replicas=1
    oc exec -n rook-ceph deploy/rook-ceph-tools -- ceph -m 10.0.0.6 status
-   ```
-
+  ```
 9. Delete old MON deployments and Services.
 
 ### Phase 2: OSD migration
@@ -211,17 +210,14 @@ done
 ### Phase 4: Operator reconciliation
 
 1. Apply the updated CephCluster CR:
-   ```bash
+  ```bash
    oc apply -f 02-ceph-cluster.yaml
-   ```
-
+  ```
 2. Scale operator back up:
-   ```bash
+  ```bash
    oc scale deploy -n rook-ceph rook-ceph-operator --replicas=1
-   ```
-
+  ```
 3. Operator detects single MON, creates 2 new MONs with hostNetwork on management IPs (see "Why MONs use management IPs" below).
-
 4. Wait for 3-MON quorum. If operator deadlocks on version upgrade (see gotcha #4), manually create the 3rd MON deployment from a template of the 2nd.
 
 ### Phase 5: Verification
@@ -257,12 +253,14 @@ echo "200G:       $(( (NIC200_TX_AFTER - NIC200_TX_BEFORE) / 1048576 )) MB" # �
 
 ## Measured performance
 
-| Metric | Value |
-|--------|-------|
-| Sequential write (dd, 4 GB) | 1.3 GB/s (10.4 Gbps) |
-| Sequential read (dd, 4 GB, cache dropped) | 1.7 GB/s (13.6 Gbps) |
-| Management NIC traffic during I/O | 0 MB |
-| 200G NIC traffic during I/O | 2063 MB (for 2 GB write) |
+
+| Metric                                    | Value                    |
+| ----------------------------------------- | ------------------------ |
+| Sequential write (dd, 4 GB)               | 1.3 GB/s (10.4 Gbps)     |
+| Sequential read (dd, 4 GB, cache dropped) | 1.7 GB/s (13.6 Gbps)     |
+| Management NIC traffic during I/O         | 0 MB                     |
+| 200G NIC traffic during I/O               | 2063 MB (for 2 GB write) |
+
 
 These numbers are for data pool `replicated.size: 1` (single OSD, no replication). With replication, write throughput would be split across replica targets.
 
@@ -297,17 +295,20 @@ Contains `mon_host` and `mon_initial_members` used by **ALL daemons** (OSDs, MGR
 **Symptom**: After MON address change, OSD pods sit at 0/1 Ready for 5 minutes, then crash. Init container logs show repeated connection attempts to old ClusterIP addresses.
 
 **Fix**: Update the secret immediately after changing MON addresses:
+
 ```bash
 MON_HOST=$(echo -n '[v2:10.0.0.6:3300,v1:10.0.0.6:6789]' | base64)
 MON_MEMBERS=$(echo -n 'e' | base64)
 oc patch secret -n rook-ceph rook-ceph-config --type merge \
   -p "{\"data\":{\"mon_host\":\"$MON_HOST\",\"mon_initial_members\":\"$MON_MEMBERS\"}}"
 ```
+
 Then restart all daemon pods.
 
 ### 3. `rook-ceph-mon-endpoints` ConfigMap
 
 Contains three critical fields:
+
 - `data`: MON endpoint list (e.g., `e=10.0.0.6:6789`)
 - `csi-cluster-config-json`: CSI driver monitor list for PVC provisioning
 - `mapping`: Node-to-MON placement mapping with addresses
@@ -324,6 +325,7 @@ If the Ceph image tag (`quay.io/ceph/ceph:v19`) resolves to a newer version than
 4. Never creates the 3rd MON → deadlock
 
 **Fix**: Pin the Ceph image to the exact running version in the CephCluster CR:
+
 ```yaml
 cephVersion:
   image: quay.io/ceph/ceph:v19.2.4  # NOT v19
@@ -389,15 +391,17 @@ HEALTH_OK
   All daemons: ceph version 19.2.4 squid (stable)
 ```
 
-| Daemon | Address | Network |
-|--------|---------|---------|
-| MON-e | 10.0.0.6 | 200G |
-| MON-k | 10.243.65.15 | Management |
-| MON-l | 10.243.65.9 | Management |
-| MGR-a (active) | 10.0.0.8 | 200G |
-| MGR-b (standby) | 10.0.0.4 | 200G |
-| MDS (all 4) | 10.0.0.8 | 200G |
-| OSDs (all 21) | 10.0.0.4/6/7 | 200G |
+
+| Daemon          | Address      | Network    |
+| --------------- | ------------ | ---------- |
+| MON-e           | 10.0.0.6     | 200G       |
+| MON-k           | 10.243.65.15 | Management |
+| MON-l           | 10.243.65.9  | Management |
+| MGR-a (active)  | 10.0.0.8     | 200G       |
+| MGR-b (standby) | 10.0.0.4     | 200G       |
+| MDS (all 4)     | 10.0.0.8     | 200G       |
+| OSDs (all 21)   | 10.0.0.4/6/7 | 200G       |
+
 
 ## Related
 
@@ -406,3 +410,4 @@ HEALTH_OK
 - [[Ceph orphaned OSDs after node disruption]]
 - Research: [[KV Cache Offloading]]
 - Runbook: `clusters/psap-diadochos-h100/rook-ceph/RUNBOOK.md`
+
