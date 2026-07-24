@@ -101,3 +101,7 @@ The TieringOffloadingSpec's secondary tier likely cannot keep up with CephFS wri
 2. **Fix CephFS observability**: grant `pods/log` access to MDS/OSD/CSI, make Prometheus queries return series, retain complete model logs.
 3. **Run at least 3 paired repetitions** of each cell.
 4. **Do not change U or concurrency yet** — U=0.55 at C=32 already shows strong offload benefit. Sweep later.
+
+## Tuned CephFS follow-up
+
+The 2026-07-24 CephFS-tuned run [`839fd11f9d6f4c1f9dac45e41314c8d1`](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/839fd11f9d6f4c1f9dac45e41314c8d1?workspace=benchflow) used 64 read threads, 32 write threads, and the Ceph 200G data path. It reached 1.300 req/s with zero request errors, recovering from the prior 0.711 req/s CephFS result and matching/slightly exceeding NVMe. Direct Ceph byte and PVC-growth telemetry is still missing, so repeat with Ceph client/MDS/OSD telemetry before treating it as final.
