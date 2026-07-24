@@ -45,3 +45,34 @@ The workload is not saturating HBM-only through useful prefix reuse: theoretical
 - CPU 64 GiB: run `a9aa2956879f4feea607e3dca61256b9`
 - CPU 64 GiB + NVMe: run `efa0fc8253574aa58d7696429fa59eef`
 - CPU 64 GiB + CephFS tuned: run `67135ac10f4a430aa1f6af878360d5f0`
+
+## Deployment and workload audit
+
+All four runs use `deepseek-ai/DeepSeek-V4-Flash`, vLLM `v0.23.0`, TP=8 on eight GPUs, `gpu-memory-utilization=0.85`, `max-model-len=131072`, FP8 KV cache, prefix caching, one replica, AgentX MVP, WEKA traces, seed 42, concurrency 32, 1,800-second profiling, and 200 GiB `/dev/shm`. The CPU and tiered cells use a 64 GiB CPU tier. The differences are the secondary tier: none, NVMe hostPath, or tuned CephFS (`n_read_threads=64`, `n_write_threads=32`, `PYTHONHASHSEED=0`).
+
+| Run | Configuration | MLflow | Errors | Restarts | Grace timeout |
+|---|---|---|---:|---:|---|
+| `de401ffc904a48d3b1e1dd43fccf31e4` | HBM/no offload | [link](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/259/runs/de401ffc904a48d3b1e1dd43fccf31e4?workspace=benchflow) | 0 | 0 | yes |
+| `a9aa2956879f4feea607e3dca61256b9` | CPU64 | [link](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/259/runs/a9aa2956879f4feea607e3dca61256b9?workspace=benchflow) | 0 | 0 | yes |
+| `efa0fc8253574aa58d7696429fa59eef` | CPU64 + NVMe | [link](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/259/runs/efa0fc8253574aa58d7696429fa59eef?workspace=benchflow) | 7 | 0 | yes |
+| `67135ac10f4a430aa1f6af878360d5f0` | CPU64 + tuned CephFS | [link](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/259/runs/67135ac10f4a430aa1f6af878360d5f0?workspace=benchflow) | 8 | 0 | yes |
+
+## Scheduler behavior
+
+Figure 3 shows the available scheduler running/waiting-request summary. Provenance: native `requests_running_waiting` gauges sampled every 15 seconds; source archives contain 288 samples per run.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":320,"title":"Figure 3 — Scheduler running and waiting requests","data":{"values":[{"variant":"No offload","state":"Running","mean":25.42,"max":53},{"variant":"No offload","state":"Waiting","mean":4.20,"max":29},{"variant":"CPU 64 GiB","state":"Running","mean":25.53,"max":46},{"variant":"CPU 64 GiB","state":"Waiting","mean":3.58,"max":26},{"variant":"CPU 64 GiB + NVMe","state":"Running","mean":26.06,"max":53},{"variant":"CPU 64 GiB + NVMe","state":"Waiting","mean":4.47,"max":31},{"variant":"CPU 64 GiB + CephFS tuned","state":"Running","mean":26.88,"max":51},{"variant":"CPU 64 GiB + CephFS tuned","state":"Waiting","mean":3.78,"max":30}]},"mark":"bar","encoding":{"x":{"field":"variant","type":"nominal","title":"Configuration"},"y":{"field":"mean","type":"quantitative","title":"Mean requests (count)","scale":{"zero":true}},"color":{"field":"state","type":"nominal","title":"Scheduler state","scale":{"scheme":"category10"}},"xOffset":{"field":"state"},"tooltip":[{"field":"variant"},{"field":"state"},{"field":"mean","title":"Mean requests","format":".2f"},{"field":"max","title":"Maximum requests","format":".0f"}]},"config":{"view":{"stroke":null}}}
+```
+
+Queue behavior is not the primary explanation for the NVMe/CephFS slowdown: mean waiting counts are similar (3.6–4.5), while latency and throughput diverge substantially. The secondary tier appears to add service overhead rather than causing a runaway queue.
+
+## Resource and storage telemetry
+
+The artifact set includes CPU, memory, KV occupancy, offload byte/time, NVMe filesystem, PVC, network, and Ceph health archives. Ceph pool bytes/IOPS, MDS request rate, and OSD latency series are empty, so CephFS read/write throughput cannot be attributed directly. NVMe device utilization is available in the raw archives and should be inspected in follow-up repetitions; this report does not infer saturation from request latency alone.
+
+## Limitations and next experiment
+
+All four runs end with the AIPerf grace timeout and retain 29–30 incomplete sessions, so the final tail is censored. The small error counts occur only in the tiered cells and do not explain the large throughput gap. The key missing evidence is per-tier hit/miss, bytes, queue depth, and latency—especially Ceph client/MDS/OSD counters and per-interface 200G NIC counters.
+
+The next experiment should repeat each point at least three times, add a fixed-prefix replay that forces known reuse, and sweep concurrency 32/64/128. Accept a tier only when it shows measurable readback, no error increase, no queue explosion, and a repeatable improvement over the HBM/CPU control.
