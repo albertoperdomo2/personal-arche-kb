@@ -2,7 +2,7 @@
 
 ## Overview
 Weekly one-on-one meetings with Ramesh Doddaiah focused on:
-- Internal Red Hat team sync (SE/KV cache performance)
+- Internal Red Hat team sync (CephFS/KV cache performance)
 - Innovation work on KV cache offloading
 - Research direction and project planning
 
@@ -12,15 +12,15 @@ Weekly one-on-one meetings with Ramesh Doddaiah focused on:
 
 | Date | File | Key Topics |
 |------|------|------------|
-| [2026-07-24](./2026-07-24.md) | 2026-07-24.md | SE performance parity, Activity-based KV cache offloading concept |
+| [2026-07-24](./2026-07-24.md) | 2026-07-24.md | CephFS performance parity, Activity-based KV cache offloading concept |
 
 ---
 
 ## Recurring Themes
 
 ### Internal Sync Topics
-- SE (Storage Engine) performance benchmarking
-- NVMe vs SE latency/bandwidth comparison
+- CephFS performance benchmarking
+- NVMe vs CephFS latency/bandwidth comparison
 - Multi-replica testing
 - Disaggregated PD (prefill/decode) architecture
 
