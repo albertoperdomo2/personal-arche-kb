@@ -284,3 +284,21 @@ The prior CephFS run used the same Qwen workload and 200 GiB `/dev/shm`, but its
 | Store-refusal warnings | ≥66,320 | 0 observed | eliminated in retained log |
 
 The tuned point is slightly ahead of NVMe (1.284 requests/s; 20.287 s mean E2E), but it is still one run. The mechanism evidence supports a Ceph data-path/drain explanation rather than a workload explanation: the prompt shape, seed, concurrency, model, TP, GPU memory target, CPU tier, and shared memory are held constant, while the Ceph route and filesystem concurrency changed. Direct Ceph client/MDS/OSD byte and latency series remain absent, so three paired repetitions with those counters are the final acceptance gate.
+
+## CephFS read/write telemetry and prior-versus-tuned plots
+
+The two CephFS runs can be compared directly, but the artifact collector still did not capture Ceph-specific read/write byte or IOPS series: pool bytes/s, pool IOPS, MDS requests, OSD latency, and Ceph health archives are empty in both runs. Therefore a true CephFS read-throughput/write-throughput plot cannot be produced from these artifacts without inventing data. The following plots make that limitation explicit and show the available node-network counters as context, not as Ceph attribution.
+
+Figure 23 shows the observed Ceph-specific telemetry availability. Provenance: raw Ceph pool/MDS/OSD archives in both MLflow artifact bundles.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":300,"title":"Figure 23 — CephFS telemetry availability","data":{"values":[{"run":"Prior CephFS","metric":"Pool bytes/s","samples":0},{"run":"Prior CephFS","metric":"Pool IOPS","samples":0},{"run":"Prior CephFS","metric":"MDS requests/s","samples":0},{"run":"Prior CephFS","metric":"OSD latency","samples":0},{"run":"Tuned CephFS","metric":"Pool bytes/s","samples":0},{"run":"Tuned CephFS","metric":"Pool IOPS","samples":0},{"run":"Tuned CephFS","metric":"MDS requests/s","samples":0},{"run":"Tuned CephFS","metric":"OSD latency","samples":0}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal","title":"Ceph metric"},"y":{"field":"samples","type":"quantitative","title":"Captured samples (count)","scale":{"zero":true}},"color":{"field":"run","type":"nominal","title":"Run","scale":{"scheme":"category10"}},"xOffset":{"field":"run"},"tooltip":[{"field":"run","type":"nominal","title":"Run"},{"field":"metric","type":"nominal","title":"Metric"},{"field":"samples","type":"quantitative","title":"Samples"}]},"config":{"view":{"stroke":null}}}
+```
+
+Figure 24 compares the available node-level network counters. Provenance: native `network_receive_bytes_per_second` and `network_transmit_bytes_per_second` archives; these are node traffic and must not be interpreted as Ceph-only traffic.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":300,"title":"Figure 24 — Node network context for CephFS runs","data":{"values":[{"run":"Prior CephFS","direction":"Receive","mbps":0.767},{"run":"Prior CephFS","direction":"Transmit","mbps":0.859},{"run":"Tuned CephFS","direction":"Receive","mbps":0.789},{"run":"Tuned CephFS","direction":"Transmit","mbps":0.705}]},"mark":"bar","encoding":{"x":{"field":"run","type":"nominal","title":"CephFS run"},"y":{"field":"mbps","type":"quantitative","title":"Node network rate (MB/s)","scale":{"zero":true}},"color":{"field":"direction","type":"nominal","title":"Direction","scale":{"scheme":"category10"}},"xOffset":{"field":"direction"},"tooltip":[{"field":"run","type":"nominal","title":"Run"},{"field":"direction","type":"nominal","title":"Direction"},{"field":"mbps","type":"quantitative","title":"Node rate (MB/s)","format":".3f"}]},"config":{"view":{"stroke":null}}}
+```
+
+These node counters are similar in magnitude and do not establish that Ceph traffic moved over the 200G interface. The decisive follow-up is to collect per-interface counters for the 200G NIC plus Ceph client/MDS/OSD bytes, operations, latency, and queue depth during the benchmark.
