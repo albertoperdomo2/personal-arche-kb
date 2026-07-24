@@ -82,50 +82,92 @@ ceph osd pool set kvcache-fs-data0 min_size 1
 ceph health mute POOL_NO_REDUNDANCY
 ```
 
-## Networking investigation (2026-07-24)
+## Networking investigation: 200G NICs for Ceph (2026-07-24)
 
-### Current state
+### Cluster network topology
 
-All Ceph traffic (OSD, MDS, client) runs over the OVN pod overlay at MTU 1400 via the management NIC. Each node has 8× ConnectX-7 200 Gbps RDMA NICs (mlx5_0–mlx5_7, `enp163s0`–`enp233s0`) that are:
+- **OVN overlay**: Geneve tunnels on `enp3s0` (10G management NIC) via `br-ex`, using 10.243.65.0/24 node IPs, MTU ~1400
+- **200G NICs**: 8× ConnectX-7 per node (`enp163s0`–`enp233s0`), each on separate /16 subnets (10.0.0.0/16 through 10.7.0.0/16), linked at 200 Gb/sec (4X HDR), MTU 9000 set on enp163s0
+- **CephFS kernel client**: Runs in the host network namespace — must reach OSD pods directly. This is the key constraint that makes all approaches fail.
 
-- Linked at **200 Gb/sec (4X HDR)**
-- All on the shared `10.0.0.0/16` subnet with cross-node reachability verified (sub-ms latency)
-- **Zero RDMA traffic** — RDMA port counters show 0 bytes transmitted/received
-- NICs support up to **MTU 9978** (currently set to 1500)
+### Approaches tested — all failed
 
-Multus CNI is deployed on the cluster. The CephCluster has no custom network configuration.
+**1. Multus ipvlan L2 (NAD: `ceph-public-200g` on `enp163s0`)**
 
-### Opportunity: Multus-based 200G Ceph network
+Created a `NetworkAttachmentDefinition` to give Ceph pods a second interface on the 200G NIC.
 
-Routing Ceph traffic over the 200G NICs is the single biggest remaining optimization — a potential ~160× bandwidth increase for cross-node Ceph operations. The path:
+**Result: FAILED.** Host cannot ARP-resolve its own ipvlan children — fundamental Linux kernel limitation. The host sends ARP for the ipvlan child IP and gets zero responses. This breaks the CephFS kernel client → OSD path.
 
-1. Raise MTU to 9000 on `enp163s0` (all 3 nodes)
-2. Create a macvlan `NetworkAttachmentDefinition` in `rook-ceph` on `enp163s0`
-3. Update CephCluster with `spec.network.provider: multus` and `spec.network.selectors.public`
-4. Attach the same Multus network to vLLM pods (CephFS kernel client needs to reach OSDs on the 200G addresses)
+Also tested:
+- **ipvlan L3 mode**: Same limitation at a different layer
+- **Separate subnet (192.168.200.0/24)**: OVN hijacked routing — `ip route get 192.168.200.x` went through `br-ex` instead of `enp163s0`
 
-**Risks:** Step 3 restarts all Ceph daemons. Both Ceph pods and CephFS client pods need the secondary interface. If the macvlan network has issues, Ceph could lose quorum.
+**2. Host networking with `addressRanges` targeting 200G subnet**
 
-**Mitigation:** With `size: 1`, a per-host CRUSH rule can pin data to the local node, eliminating cross-node data traffic entirely. Multus is then only needed for MDS metadata (small volume).
+Set `network.provider: host` + `public_network = 10.0.0.0/16` so Ceph daemons bind to 200G NIC IPs.
 
-### Alternative: same-node CRUSH rule
+**Result: FAILED.** OVN-networked pods have NO route to 10.0.0.0/16. `ip route get 10.0.0.7` from inside any OVN pod returns "no route to host." New MGR/MDS pods advertised 200G IPs and became unreachable. PGs went "unknown."
+
+Additionally discovered that Rook operator does NOT update existing MON/OSD deployments with `hostNetwork: true` — it only applies to newly created deployments. Had to manually patch all 21 OSD deployments with `oc patch deployment --type strategic -p '{"spec":{"template":{"spec":{"hostNetwork":true,"dnsPolicy":"ClusterFirstWithHostNet"}}}}'`.
+
+**3. Host networking with management subnet**
+
+Set `public_network = 10.243.65.0/24` so Ceph binds to the management IP (reachable from OVN pods).
+
+**Result: FAILED.** OCP's OVN firewall blocks pod-to-nodeIP traffic on non-standard ports. Confirmed with `nc -zv`:
+- Port 22 (SSH): reachable cross-node ✓
+- Port 6789 (MON): blocked ✗
+- Port 6800 (OSD): blocked ✗
+- Port 3300 (MON v2): blocked ✗
+
+IBM Cloud VPC security groups add a second layer of blocking on the same ports cross-node.
+
+### Cluster damage and recovery
+
+The host networking attempt broke MON quorum — new MONs (f, g) on `hostNetwork` couldn't be reached by old MON (e) on pod network. Recovery required:
+
+1. Scale down operator and all MONs
+2. Privileged repair pod with `quay.io/ceph/ceph:v19`, mounting MON data directory from host
+3. Extract monmap: `ceph-mon --extract-monmap /tmp/monmap --mon-data /var/lib/rook/mon-e/data`
+4. Remove broken MONs: `monmaptool --rm f`, `--rm g`, `--rm c`
+5. Inject fixed map: `ceph-mon --inject-monmap /tmp/monmap --mon-data /var/lib/rook/mon-e/data`
+6. Update `rook-ceph-mon-endpoints` configmap to single surviving MON
+7. Delete broken MON deployments, scale up surviving MON
+8. Remove stale `public_network` from Ceph config database (OSDs crashed with "unable to find any IPv4 address in networks '10.243.65.0/24'")
+9. Restart all OSD pods, scale up operator — operator auto-created 2 new MONs
+
+Cluster recovered to HEALTH_OK with all 109.92k objects (426 GiB) intact.
+
+### Conclusion
+
+**200G networking is NOT viable for Rook-Ceph on OCP with OVN-Kubernetes on IBM Cloud.** Three independent blockers:
+
+1. **ipvlan kernel limitation**: Host cannot communicate with its own ipvlan children — breaks the CephFS kernel client → OSD path
+2. **OVN firewall**: Blocks Ceph ports (6789, 6800+) on node IPs from pods — would require OCP network-policy changes or custom OVN ACLs
+3. **IBM Cloud VPC security groups**: Block cross-node host-to-host traffic on non-standard ports — would require VPC security group modifications
+
+The cluster runs Ceph over the OVN overlay (~10 Gbps management NIC). For higher throughput, the remaining options are:
+
+- **Same-node CRUSH rule**: Pin data to local OSDs, eliminating all cross-node data traffic
+- **hostPath NVMe tier**: `nvme0n1` is already reserved on each node for this
+
+### Same-node CRUSH rule (not yet applied)
 
 Since benchmarks are pinned to specific nodes and the data pool uses `size: 1`:
 
 ```bash
-# Example for pinning data to fx7c8
 ceph osd crush rule create-replicated kvcache-local default host nvme
 ceph osd pool set kvcache-fs-data0 crush_rule kvcache-local
 ```
 
-This turns every CephFS data write into a local NVMe write with zero network overhead. The tradeoff is that RWX reads from other nodes would still work but with a network hop, and only 1/3 of total NVMe capacity is available. For KV cache (a few TB at most), capacity is not a concern.
+This turns every CephFS data write into a local NVMe write with zero network overhead. The tradeoff: RWX reads from other nodes still incur a network hop through OVN, and only 1/3 of total NVMe capacity is available per node. For KV cache (a few TB at most), capacity is not a concern.
 
 ## Further opportunities not yet applied
 
 - **Same-node CRUSH rule**: eliminates cross-node data traffic entirely (see above)
-- **Multus 200G networking**: route all Ceph traffic over 200 Gbps RDMA NICs
-- **Jumbo frames**: 200G NICs support MTU 9978; raising from 1500 to 9000 reduces per-packet overhead
-- **RDMA messenger**: Ceph supports `ms_type = async+rdma` for zero-copy RDMA messaging over the ConnectX-7 NICs
+- ~~**Multus 200G networking**~~: NOT VIABLE — see investigation above
+- ~~**Host networking**~~: NOT VIABLE on OCP/OVN — see investigation above
+- ~~**RDMA messenger**~~: Requires 200G networking to be viable first
 - **GPUDirect Storage (GDS)**: CephFS does not support `O_DIRECT`, so full GDS bypass is unavailable; `bb_read_write` bounce-buffer mode is unverified
 - **Erasure coding**: lower storage overhead than replication with less write amplification, but adds CPU overhead
 
