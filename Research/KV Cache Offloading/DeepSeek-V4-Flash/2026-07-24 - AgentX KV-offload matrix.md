@@ -14,7 +14,11 @@ This four-run matrix compares HBM-only, 64 GiB CPU tier, 64 GiB CPU+NVMe, and 64
 
 | Configuration | Req/s | Output tok/s | Mean TTFT (s) | Mean E2E (s) | Sessions |
 |---|---:|---:|---:|---:|---:|
-| No offload | 0.363 | 235.1 | 11.469 | 79.430 | 19 |\n| CPU 64 GiB | 0.359 | 236.9 | 10.687 | 80.187 | 18 |\n| CPU 64 GiB + NVMe | 0.233 | 135.8 | 20.824 | 129.272 | 12 |\n| CPU 64 GiB + CephFS tuned | 0.257 | 151.4 | 15.950 | 114.149 | 12 |\n
+| No offload | 0.363 | 235.1 | 11.469 | 79.430 | 19 |
+| CPU 64 GiB | 0.359 | 236.9 | 10.687 | 80.187 | 18 |
+| CPU 64 GiB + NVMe | 0.233 | 135.8 | 20.824 | 129.272 | 12 |
+| CPU 64 GiB + CephFS tuned | 0.257 | 151.4 | 15.950 | 114.149 | 12 |
+
 Figure 1 compares the four headline outcomes. Provenance: native AIPerf profile exports.
 
 ```vega-lite
