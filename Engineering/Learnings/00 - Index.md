@@ -11,3 +11,5 @@ One file per learning keeps them searchable. Name them descriptively (e.g. `vLLM
 - [[Forge extends only applies to presets]] — Forge `extends` merges preset-level fields, not top-level config.
 - [[vLLM offloading spec architecture and dev-shm confound]] — how vLLM's offloading spec determines /dev/shm sizing and the confound with shared_memory_size.
 - [[vLLM offloading specs - CPUOffloadingSpec vs TieringOffloadingSpec]] — the two offloading spec types, when to use each, and how tier configuration works.
+- [[vLLM KV Events canonical form]] — canonical reference for vLLM's KV cache event types (BlockStored, BlockRemoved, AllBlocksCleared), their fields, wire format, key source files, and schema evolution notes.
+- [[vLLM KV block prefetch architecture]] — the three distinct KV block prefetch mechanisms in vLLM (TieringOffloadingManager, LMCache MP Connector, Weight Prefetch), their tiers, state machines, and async design principles.
