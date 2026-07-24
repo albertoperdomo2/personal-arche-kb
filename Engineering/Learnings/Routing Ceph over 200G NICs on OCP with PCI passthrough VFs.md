@@ -350,6 +350,34 @@ done
 ibmcloud is sg-rulec $SG inbound tcp --port-min 6800 --port-max 7300 --remote $SG
 ```
 
+### 7. Stale CephFS kernel mounts after MON address migration
+
+PVCs that were mounted **before** the migration retain kernel CephFS sessions with the old MON ClusterIP addresses baked into `mon_addr`. After the migration deletes the old MON Services, the kernel client can't reconnect, and every new `mount.ceph` call targeting those dead addresses times out.
+
+**Symptoms**: `DeadlineExceeded` on first mount attempt, then `Aborted` ("operation already exists") on all retries. Kernel logs (`dmesg`) show `libceph: mon0 (1)172.30.x.x:6789 socket closed (con state V1_BANNER)` in a retry loop. PVCs provisioned *after* the migration (using new addresses) mount fine — only pre-existing mounts are affected.
+
+**Diagnosis**: Check for stale kernel mounts on each node:
+```bash
+oc debug node/<node> -- nsenter -t 1 -m -- mount -t ceph
+# Look for mon_addr= pointing to old ClusterIP addresses (172.30.x.x)
+```
+
+**Fix**: Force unmount from the **host mount namespace** (not the debug pod's namespace), then restart the CSI node plugin:
+```bash
+# Must use nsenter to affect the host — chroot alone runs in the debug pod's mount namespace
+oc debug node/<node> -- nsenter -t 1 -m -- bash -c '
+  umount -l /var/lib/kubelet/pods/<pod-uid>/volumes/kubernetes.io~csi/<pvc-name>/mount
+  umount -l /var/lib/kubelet/plugins/kubernetes.io/csi/rook-ceph.cephfs.csi.ceph.com/<hash>/globalmount
+'
+
+# Restart CSI node plugin to clear in-memory staging state
+oc delete pod -n rook-ceph <cephfs-nodeplugin-pod-on-that-node>
+```
+
+**Important**: `oc debug node/... -- chroot /host umount ...` does NOT work — the debug pod has its own mount namespace, so `umount` inside it doesn't affect the host. You must use `nsenter -t 1 -m` to enter PID 1's mount namespace.
+
+**Scope**: This is a one-time post-migration cleanup. Only affects nodes that had active CephFS mounts at the time of the migration. New mounts use the current monitor addresses and are not affected.
+
 ## Monmap repair procedure (used for cluster recovery)
 
 When MON quorum is permanently broken (e.g., MONs on mixed pod-network / host-network IPs that can't reach each other):
@@ -410,4 +438,3 @@ HEALTH_OK
 - [[Ceph orphaned OSDs after node disruption]]
 - Research: [[KV Cache Offloading]]
 - Runbook: `clusters/psap-diadochos-h100/rook-ceph/RUNBOOK.md`
-
