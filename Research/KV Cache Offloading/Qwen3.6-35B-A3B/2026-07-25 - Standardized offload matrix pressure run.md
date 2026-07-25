@@ -93,7 +93,7 @@ Hold the deployment and `/dev/shm` constant, increase concurrency in steps (32, 
 
 ## Fine-grained time-series telemetry
 
-The following figures use horizontally arranged single-view panels. Each panel is one configuration or one time-series metric, with shared visual conventions and synchronized units. The source cadence is retained at the finest practical artifact resolution for this document.
+The following figures use horizontally arranged single-view panels. Each panel is one configuration or one time-series metric, with shared visual conventions and synchronized units. The source gauges are natively sampled at 15-second cadence. To fit the multi-panel inline Vega-Lite payload within the current article transport limit, these views retain every 24th sample (approximately 6-minute display cadence); the complete native series remain in the MLflow artifacts and were used for the summary statistics.
 
 Figure 8 compares running and waiting requests in one row, with one panel per configuration and a shared Running/Waiting color mapping. Provenance: native vLLM `requests_running_waiting` gauges.
 ```vega-lite
