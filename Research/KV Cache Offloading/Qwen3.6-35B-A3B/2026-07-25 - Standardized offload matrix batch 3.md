@@ -95,8 +95,9 @@ Hold the deployment and `/dev/shm` constant, increase concurrency in steps (32, 
 
 The report-level comparison plots are grouped under this report directory:
 
-- [[2026-07-25 - Batch 3 Prompt Tokens by Source comparison|Prompt Tokens by Source — comparison]]
+- [[2026-07-25 - Batch 3 Prompt Tokens by Source comparison — part 1|Prompt Tokens by Source — comparison (part 1)]]
+- [[2026-07-25 - Batch 3 Prompt Tokens by Source comparison — part 2|Prompt Tokens by Source — comparison (part 2)]]
 - [[2026-07-25 - Batch 3 Running and Waiting Requests comparison|Running and Waiting Requests — comparison]]
 - [[2026-07-25 - Batch 3 KV Transfer and Storage comparison|KV Transfer and Storage — comparison]]
 
-These comparison articles overlay configurations with shared legends and units. The earlier per-configuration time-series notes remain as diagnostic records; the comparison appendices are the preferred views for cross-configuration interpretation.
+Each appendix now contains one full-resolution time-series panel per configuration, preserving the native samples and avoiding misleading overlays of independently-started clocks. The prompt-source series is split into two linked temporal parts solely to keep each KB document within the authenticated payload limit; no samples are aggregated or discarded.
