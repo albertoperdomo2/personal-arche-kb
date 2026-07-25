@@ -167,20 +167,19 @@ func (s *StreamingServer) finishResponse(ctx context.Context, reqCtx *RequestCon
 - Pro: Handles the semantic case (non-streaming = single chunk = first token IS complete)
 - Con: Changes metric validation logic, might mask real bugs in streaming path
 
-> **Try it yourself —** Which approach is safer? Consider: does `HandleResponseBody` unconditionally overwrite `FirstTokenTimestamp`, or only when zero?
+> **Try it yourself —** Which approach is safer? Consider: does `HandleResponseBody` unconditionally overwrite `FirstTokenTimestamp`, or only if it's zero?
 
-> **Approach hint —** Check `response.go:55`: `if reqCtx.FirstTokenTimestamp.IsZero() && len(responseBytes) > 0`. It only sets if zero. So Option A works: set it in `finishResponse` *before* calling `HandleResponseBody`, and the later call won't overwrite.
+> **Approach hint —** Check `response.go:55`: `if reqCtx.FirstTokenTimestamp.IsZero() && len(responseBytes) > 0`. It only sets if zero. So pre-setting it in `finishResponse` is safe.
 
-**Scaffolding:**
+**Scaffolding** (fill in the `TODO`s):
 ```go
 // In pkg/epp/handlers/server.go — finishResponse function
 func (s *StreamingServer) finishResponse(ctx context.Context, reqCtx *RequestContext, body []byte, modelStreaming bool, setEos bool) {
     // ... existing code ...
 
     // TODO: For non-streaming, set FirstTokenTimestamp BEFORE ResponseCompleteTimestamp
-    // This ensures firstToken <= complete for the TPOT validation
+    // Guard with !modelStreaming so streaming path is unaffected
     if !modelStreaming {
-        // Set first token timestamp to now (the entire response is the "first token" conceptually)
         reqCtx.FirstTokenTimestamp = time.Now()
     }
 
@@ -195,77 +194,32 @@ func (s *StreamingServer) finishResponse(ctx context.Context, reqCtx *RequestCon
 
 ---
 
-### Step 3: Verify the Fix Doesn't Break Streaming
+### Step 3: Add a Test Case
 
-**What and why:** Ensure the streaming path still works correctly — `FirstTokenTimestamp` should be set by the first chunk, not by `finishResponse`.
-
-**Where to look:** `pkg/epp/handlers/response.go:55-56` — the `FirstTokenTimestamp.IsZero()` guard.
-
-> **Try it yourself —** Trace through a streaming request:
-> 1. First chunk arrives → `HandleResponseBody` called with `endOfStream=false`
-> 2. `FirstTokenTimestamp.IsZero()` is true → sets `FirstTokenTimestamp = time.Now()`
-> 3. Later chunks arrive → `FirstTokenTimestamp.IsZero()` is false → **does not overwrite**
-> 4. Final chunk → `finishResponse` called with `modelStreaming=true`
-> 5. Your fix: `if !modelStreaming { ... }` block is skipped ✓
-
-> **Approach hint —** The `modelStreaming` parameter tells you which path you're in. Guard your fix with `if !modelStreaming`.
-
-**Scaffolding:**
-```go
-// In pkg/epp/handlers/server.go — finishResponse
-// TODO: Verify streaming path is unaffected by adding a test case or trace log
-```
-
-➡️ **Full code for this step:** see *Step 3* in [[Company/Research/Issues/Guides/llm-d-llm-d-router/issue-2166-solution]].
-
----
-
-### Step 4: Add a Test Case for Non-Streaming TPOT
-
-**What and why:** The existing test `TestRecordRequestTPOT` doesn't cover the non-streaming equality case. Add a test that verifies TPOT is recorded when `firstToken == complete` (with >1 output tokens).
+**What and why:** Verify the fix works by adding a test for the `firstToken == complete` case with `outputTokens > 1`.
 
 **Where to look:** `pkg/epp/metrics/metrics_test.go:1436-1472` — `TestRecordRequestTPOT`
 
-> **Try it yourself —** Add a test case `"non-streaming equal timestamps"` that passes `firstToken == complete` with `outputTokens=10` and expects `true` (metric recorded).
+> **Try it yourself —** Add a new `t.Run` case that calls `RecordRequestTPOT` with `received == firstToken == complete` and `outputTokens = 10`. Expect it to return `true` and record TPOT = 0.
 
-> **Approach hint —** The TPOT formula is `(complete - firstToken).Seconds() / (outputTokens - 1)`. When equal, this is `0 / 9 = 0`. That's a valid observation (instantaneous generation).
+> **Approach hint —** Follow the existing test pattern. Use `timeBaseline` for all three timestamps. Verify the histogram gets one sample with sum ≈ 0.
 
-**Scaffolding:**
+**Scaffolding** (fill in the `TODO`s):
 ```go
 // In pkg/epp/metrics/metrics_test.go — TestRecordRequestTPOT
 t.Run("non-streaming equal timestamps", func(t *testing.T) {
-    // TODO: firstToken == complete, outputTokens > 1 should succeed
-    // TPOT = 0 / (N-1) = 0
-    require.True(t, RecordRequestTPOT(ctx, "m10", "t10", "tenant-a", "3", 
-        timeBaseline, timeBaseline, timeBaseline, 10))
+    // TODO: For non-streaming, firstToken and complete are effectively the same moment.
+    // With outputTokens > 1, TPOT = 0 / (N-1) = 0, which is a valid observation.
+    require.True(t, RecordRequestTPOT(ctx, "m10", "t10", "tenant-a", "3", timeBaseline, timeBaseline, timeBaseline, 10))
 
-    // TODO: Verify histogram recorded with value 0
+    h, err := getHistogramVecLabelValues(t, llmdRequestTPOT, "m10", "t10", "tenant-a", "3")
+    require.NoError(t, err)
+    require.Equal(t, uint64(1), h.GetSampleCount())
+    require.InDelta(t, 0.0, h.GetSampleSum(), 0.001)  // TPOT = 0
 })
 ```
 
-➡️ **Full code for this step:** see *Step 4* in [[Company/Research/Issues/Guides/llm-d-llm-d-router/issue-2166-solution]].
-
----
-
-### Step 5: Run Tests and Verify
-
-**What and why:** Confirm the fix works and doesn't regress existing behavior.
-
-**Commands:**
-```bash
-# Run the specific metric tests
-make test PKG=./pkg/epp/metrics/... RUN=TestRecordRequestTPOT
-
-# Run handler tests
-make test PKG=./pkg/epp/handlers/...
-
-# Full presubmit
-make presubmit
-```
-
-> **Try it yourself —** Run the tests. If any fail, trace through the logic to see why.
-
-➡️ **Full test output:** see *Step 5* in [[Company/Research/Issues/Guides/llm-d-llm-d-router/issue-2166-solution]].
+➡️ **Full code for this step:** see *Step 3* in [[Company/Research/Issues/Guides/llm-d-llm-d-router/issue-2166-solution]].
 
 ---
 
@@ -274,25 +228,19 @@ make presubmit
 > **Verify as you go**, not just at the end.
 
 ### Unit Tests
-- [ ] `TestRecordRequestTPOT` — new case: `firstToken == complete` with `outputTokens > 1` returns `true` and records histogram value `0`
-- [ ] `TestRecordRequestTPOT` — existing cases still pass (streaming path unchanged)
-- [ ] Handler tests — non-streaming request sets `FirstTokenTimestamp` before `ResponseCompleteTimestamp`
+- [ ] `TestRecordRequestTPOT` — new case "non-streaming equal timestamps" passes
+- [ ] All existing TPOT tests still pass (no regression on streaming path)
+- [ ] Handler tests for `finishResponse` / `HandleResponseBody` pass
 
 ### Integration / Manual Testing
-- [ ] Send non-streaming request via `curl` or test client
-- [ ] Verify no error log: `"Request latency values are invalid for TPOT calculation"`
-- [ ] Check Prometheus: `llmd_request_tpot` has samples for non-streaming requests
-- [ ] Verify streaming requests still record correct TPOT
+- [ ] Send non-streaming request → verify no TPOT error in logs
+- [ ] Check Prometheus: `llmd_request_tpot` has samples for non-streaming traffic
+- [ ] Send streaming request → verify TPOT still recorded correctly
 
-### Edge Cases
-- [ ] Non-streaming with 1 output token (should skip TPOT, not error)
-- [ ] Non-streaming with 0 output tokens (should skip)
-- [ ] Streaming with 1 token (should skip TPOT)
-- [ ] Clock skew: `firstToken` slightly after `complete` (should still error — that's a real bug)
+Example test code lives in the [[…issue-2166-solution]] article.
 
 ## Related Resources
 
 - [Issue #2166](https://github.com/llm-d/llm-d-router/issues/2166) — original issue
-- [TPOT Metric Documentation](https://github.com/llm-d/llm-d-router/blob/main/pkg/epp/metrics/metrics.go#L681) — `RecordRequestTPOT` implementation
-- [Ext-proc Protocol](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_proc_filter) — request/response flow
-- [[Company/Research/Issues/Guides/llm-d-llm-d-router/issue-2166-solution]] — complete reference solution
+- [TPOT metric documentation](https://github.com/llm-d/llm-d-router/blob/main/docs/metrics.md) — if exists
+- [ext-proc protocol](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_proc_filter) — Envoy external processor protocol
