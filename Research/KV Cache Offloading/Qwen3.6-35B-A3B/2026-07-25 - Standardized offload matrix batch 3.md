@@ -106,3 +106,14 @@ The complete native-granularity plots are decomposed into linked companion artic
 - [[2026-07-25 - Batch 3 CephFS request time series|CephFS — request/scheduler time series]]
 - [[2026-07-25 - Batch 3 CephFS prompt source time series|CephFS — prompt source time series]]
 - [[2026-07-25 - Batch 3 CephFS KV transfer time series|CephFS — KV transfer time series]]
+
+
+## Comparison appendices
+
+The report-level comparison plots are grouped under this report directory:
+
+- [[2026-07-25 - Batch 3 Prompt Tokens by Source comparison|Prompt Tokens by Source — comparison]]
+- [[2026-07-25 - Batch 3 Running and Waiting Requests comparison|Running and Waiting Requests — comparison]]
+- [[2026-07-25 - Batch 3 KV Transfer and Storage comparison|KV Transfer and Storage — comparison]]
+
+These comparison articles overlay configurations with shared legends and units. The earlier per-configuration time-series notes remain as diagnostic records; the comparison appendices are the preferred views for cross-configuration interpretation.
