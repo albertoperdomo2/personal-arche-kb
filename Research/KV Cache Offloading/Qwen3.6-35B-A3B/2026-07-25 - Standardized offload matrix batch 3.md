@@ -91,23 +91,6 @@ The workload is heavily pressured: mean KV occupancy ranges from 79.9% (NVMe) to
 Hold the deployment and `/dev/shm` constant, increase concurrency in steps (32, 64, 128, 256), and collect at least three repetitions per cell. Stop or mark the point when KV occupancy reaches the desired pressure band (for example 70–90% rather than 10%). Export NVMe device latency/queue depth and CephFS client read/write/MDS counters at the same 15-second cadence. This separates workload sizing from storage-medium effects and turns the current directional result into a causal offload curve.
 
 
-## Full-resolution time-series appendices
-
-The complete native-granularity plots are decomposed into linked companion articles so the MCP payload remains reliable without dropping samples:
-
-- [[2026-07-25 - Batch 3 no-offload request time series|No offload — request/scheduler time series]]
-- [[2026-07-25 - Batch 3 no-offload prompt source time series|No offload — prompt source time series]]
-- [[2026-07-25 - Batch 3 CPU64 request time series|CPU64 — request/scheduler time series]]
-- [[2026-07-25 - Batch 3 CPU64 prompt source time series|CPU64 — prompt source time series]]
-- [[2026-07-25 - Batch 3 CPU64 KV transfer time series|CPU64 — KV transfer time series]]
-- [[2026-07-25 - Batch 3 NVMe request time series|NVMe — request/scheduler time series]]
-- [[2026-07-25 - Batch 3 NVMe prompt source time series|NVMe — prompt source time series]]
-- [[2026-07-25 - Batch 3 NVMe KV transfer time series|NVMe — KV transfer time series]]
-- [[2026-07-25 - Batch 3 CephFS request time series|CephFS — request/scheduler time series]]
-- [[2026-07-25 - Batch 3 CephFS prompt source time series|CephFS — prompt source time series]]
-- [[2026-07-25 - Batch 3 CephFS KV transfer time series|CephFS — KV transfer time series]]
-
-
 ## Comparison appendices
 
 The report-level comparison plots are grouped under this report directory:
