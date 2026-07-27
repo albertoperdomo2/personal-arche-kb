@@ -302,3 +302,9 @@ Figure 24 compares the available node-level network counters. Provenance: native
 ```
 
 These node counters are similar in magnitude and do not establish that Ceph traffic moved over the 200G interface. The decisive follow-up is to collect per-interface counters for the 200G NIC plus Ceph client/MDS/OSD bytes, operations, latency, and queue depth during the benchmark.
+
+## Sixth run: tuned CephFS at concurrency 128
+
+Run [f464fcaa0f964f14baefd44380e0f283](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/f464fcaa0f964f14baefd44380e0f283?workspace=benchflow) adds a tuned CephFS point at **concurrency 128**. It completed 1,237 requests at 0.675 requests/s, 455.1 output tokens/s, mean TTFT 117.871 s, and mean E2E 175.594 s, with one client payload-transfer timeout. The theoretical shared-prefix opportunity was 94.68% and mean effective concurrency was 119.2 (p99 142), so this is a saturated operating point—not a directly comparable replacement for the original C=32 tuned run.
+
+The full-resolution running/waiting, prompt-source, and direct Ceph pool read/write bandwidth and IOPS plots are in the [C=128 tuned CephFS addendum](2026-07-24%20-%20Five-run%20CephFS%20tuning%20matrix/2026-07-27%20-%20Tuned%20CephFS%20concurrency%20128%20addendum.md). This run is valuable because its artifact bundle contains non-empty direct Ceph pool telemetry; the earlier CephFS runs did not. The result should be retained as a saturation boundary and repeated at least twice before building a concurrency-scaling conclusion.
