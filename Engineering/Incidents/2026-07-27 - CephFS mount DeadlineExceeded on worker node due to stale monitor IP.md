@@ -1,7 +1,7 @@
 # 2026-07-27 — CephFS mount DeadlineExceeded on worker node due to unreachable Ceph public network
 
 ## Symptom
-Pod `kv-cache-wins-m3-render` (and later `kv-cache-wins-m1-render`) on worker node `diadochos-hqxzk-worker-1-8p9vb` failed with:
+Pod `kv-cache-wins-m3-render` (and later `kv-cache-wins-m1-render`, `kv-cache-wins-m2-render`) on worker node `diadochos-hqxzk-worker-1-8p9vb` failed with:
 ```
 MountVolume.MountDevice failed for volume "pvc-0c02d4b2-..." : rpc error: code = DeadlineExceeded desc = context deadline exceeded
 ```
@@ -20,44 +20,73 @@ mount error 110 = Connection timed out
 - Node: `diadochos-hqxzk-worker-1-8p9vb` (10.243.1.5, worker, no GPUs, 20GB RAM)
 - Rook-Ceph v19.2.4 (Squid), ceph-csi v3.17.0
 - PVC: `models-storage` (2500Gi, RWX, `rook-cephfs` StorageClass, CephFS `kvcache-fs`)
-- CephCluster `network.public: 10.0.0.0/16`
-- Monitors: e (gpu-h100-fx7c8, 10.0.0.6), k (gpu-h100-gjfjh, 10.243.65.15), l (gpu-h100-6kl5z, 10.243.65.9) — all hostNetwork
-- MDS: all 4 daemons on gpu-h100-gjfjh, bound to `10.0.0.8:6800-6807`
+- CephCluster `network.public: 10.0.0.0/16` (original)
+- Monitors: e (gpu-h100-fx7c8), k (gpu-h100-gjfjh), l (gpu-h100-6kl5z) — all hostNetwork
+- MDS: all 4 daemons on gpu-h100-gjfjh
+- Dual-homed GPU nodes: Kubernetes IPs on `10.243.65.0/24`, secondary storage interface on `10.0.0.0/16`
+- Worker nodes on `10.243.1.0/24`: can reach `10.243.65.0/24` but NOT `10.0.0.0/16`
 
 ## Root Cause
-The CephCluster CR has `network.public: 10.0.0.0/16`. All Ceph daemons (monitors, MDS, OSDs) bind to the `10.0.0.x` interface — a secondary/storage network on the GPU nodes. This network is **only routable between GPU nodes**, not from worker nodes on the `10.243.1.x` subnet.
+The CephCluster CR had `spec.network.addressRanges.public: ["10.0.0.0/16"]`. All Ceph daemons (monitors, MDS, OSDs) bound to the `10.0.0.x` interface — a secondary/storage network on the GPU nodes. This network is **only routable between GPU nodes**, not from worker nodes on the `10.243.1.x` subnet.
 
 The mount failure chain:
-1. CSI configmap originally had `10.0.0.6` for mon-e → unreachable from worker → TCP SYN hangs → CSI operation lock stuck → kubelet retries rejected → CSI crash loop (27 restarts)
-2. After fixing the configmap (mon-e → `10.243.65.5`), the kernel CephFS client connects to monitors at `10.243.65.15` and `10.243.65.9` (their Kubernetes node IPs, reachable)
-3. Monitors direct the client to the MDS at `10.0.0.8` (the Ceph public network address)
-4. Worker node cannot reach `10.0.0.8` → mount hangs → `ETIMEDOUT` after 30s
-5. CephFS will never mount from worker nodes while MDS/OSD addresses are on `10.0.0.0/16`
+1. CSI configmap had `10.0.0.6` for mon-e → unreachable from worker → TCP SYN hangs → CSI operation lock stuck → kubelet retries rejected → CSI crash loop (27 restarts)
+2. Even after fixing monitor addresses, MDS daemons were bound to `10.0.0.8` (unreachable from worker)
+3. OSDs were also bound to `10.0.0.x` addresses
+4. The kernel CephFS client connects to monitors → gets MDS/OSD addresses on `10.0.0.x` → can't reach them → mount hangs → DeadlineExceeded
 
-Additional issues found during investigation:
-- Mon-e's ClusterIP service endpoint pointed to `10.243.65.5` where mon-e is NOT listening (it's on `10.0.0.6`) — connection refused
+Additional issues:
+- Mon-e's ClusterIP service endpoint pointed to `10.243.65.5` where mon-e is NOT listening (daemon bound to `10.0.0.6`) — connection refused
 - Mon-k and mon-l had no ClusterIP services at all
-- The tools pod's `ceph.conf` used three broken ClusterIP addresses — all three unreachable
+- The tools pod's `ceph.conf` used three broken ClusterIP addresses
 - Rook operator was stuck in an OSD "not ok-to-stop" loop because `kvcache-fs-data0` pool has `size 1` (no replication)
+- CSI `ceph-csi-config` ConfigMap is separate from `rook-ceph-mon-endpoints` — must patch both
 
 ## Resolution
-Partial — the monitor-level issues were fixed, but the MDS reachability issue remains:
 
-### Applied
-1. **Patched `rook-ceph-mon-endpoints` ConfigMap** — replaced `10.0.0.6` with `10.243.65.5` for mon-e. Fast-fail (connection refused) instead of hang.
-2. **Deleted stuck CSI node plugin pod** on `worker-1-8p9vb` — cleared operation lock.
-3. **Enabled `skipUpgradeChecks: true`** on CephCluster CR to unblock the OSD rolling restart (all 21 OSDs rolled successfully). Disabled it afterward.
+### 1. Monitor ConfigMap fix
+Patched `rook-ceph-mon-endpoints` ConfigMap — replaced `10.0.0.6` with `10.243.65.5` for mon-e in all three fields (`data`, `csi-cluster-config-json`, `mapping`). Fast-fail (connection refused) instead of TCP hang.
 
-### Not resolved — CephFS unmountable from worker nodes
-The MDS daemons are bound to `10.0.0.8` (the `10.0.0.0/16` public network). Worker nodes cannot reach this address. Fix options:
-1. **Network fix**: add a route from worker subnet to `10.0.0.0/16`
-2. **CephCluster network fix**: change public network CIDR to include `10.243.0.0/16` so daemons rebind to Kubernetes-routable IPs (requires full Ceph daemon restart)
-3. **Scheduling fix**: restrict CephFS-dependent pods to GPU nodes via nodeSelector/affinity
+### 2. OSD rolling restart
+Enabled `skipUpgradeChecks: true` on CephCluster CR to bypass the `ok-to-stop` check (blocked by `size 1` pool). All 21 OSDs rolled. Disabled `skipUpgradeChecks` afterward.
+
+### 3. CephCluster public network change (root cause fix)
+Changed `spec.network.addressRanges.public` from `["10.0.0.0/16"]` to `["10.243.65.0/24"]`. This makes all Ceph daemons bind to Kubernetes-routable IPs instead of the secondary storage interface.
+
+After the patch, force-restarted all MDS and OSD deployments:
+```bash
+oc rollout restart deployment -n rook-ceph -l app=rook-ceph-mds
+oc rollout restart deployment -n rook-ceph -l app=rook-ceph-osd
+```
+
+Verified:
+- MDS rebinding to `10.243.65.15` (routable)
+- OSDs rebinding to `10.243.65.x` (routable)
+- Cluster HEALTH_OK, all 21 OSDs up, 130 PGs active+clean
+
+### 4. CSI config fix
+Patched `ceph-csi-config` ConfigMap (the one CSI pods actually read) to remove mon-e (`10.243.65.5`) since the daemon is NOT listening on that IP. Only mon-k (`10.243.65.15`) and mon-l (`10.243.65.9`) remain. 2/3 monitors is sufficient for quorum.
+
+### 5. Stale state cleanup
+- Deleted CSI node plugin pod on worker (multiple times to clear stuck operation locks)
+- Removed stale staging directory from `/var/lib/kubelet/plugins/kubernetes.io/csi/`
+- VolumeAttachment on worker cleaned up automatically after workload removal
+
+### Verification
+- Manual `mount -t ceph` from worker debug pod: **SUCCESS** — mounted, listed files, unmounted
+- Manual `mount -t ceph` from inside CSI pod: **SUCCESS**
+- Ceph cluster HEALTH_OK with all daemons on routable IPs
+
+### Remaining: mon-e monmap address
+Mon-e is still registered at `10.0.0.6` in the Ceph monmap. The daemon binds to the monmap address, not the ConfigMap address. Changing a monitor's IP in the monmap requires the Rook operator's monitor failover process. Since 2/3 monitors is sufficient and mon-e was removed from the CSI config, this is non-blocking. Future fix: let Rook detect the IP mismatch and replace mon-e, or manually update the monmap.
 
 ## Prevention / Runbook
 - When adding worker nodes on a different subnet, verify ALL Ceph daemon addresses (monitors, MDS, OSDs) are routable from the new subnet — not just the monitors. Use `ceph fs dump` and `ceph osd find <id>` to check MDS and OSD addresses.
 - The `network.public` CIDR in the CephCluster CR controls which interface Ceph daemons bind to. If the cluster serves multiple subnets, this CIDR must include the routable address range.
-- Pools with `size 1` block the Rook operator's OSD rolling restart permanently.
+- The CSI reads monitors from `ceph-csi-config` ConfigMap, NOT `rook-ceph-mon-endpoints`. The Rook operator regenerates `ceph-csi-config` from `rook-ceph-mon-endpoints`, so manual patches to `ceph-csi-config` may be overwritten.
+- Pools with `size 1` block the Rook operator's OSD rolling restart permanently. Use `skipUpgradeChecks: true` temporarily.
+- The CSI per-volume operation lock can get permanently stuck if a mount hangs and the context deadline passes. Deleting the CSI node plugin pod clears the in-memory lock. Also remove stale staging directories.
+- Monitor IP changes in the monmap require Rook's failover process — simply restarting the monitor pod does not change its bound address.
 
 ## Related
 - Prior incident: [[2026-07-20 - Ceph HEALTH_WARN orphaned OSDs crash-looping on diadochos]]
