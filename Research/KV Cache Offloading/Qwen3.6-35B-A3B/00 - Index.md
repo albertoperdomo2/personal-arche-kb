@@ -14,7 +14,7 @@ topic: KV Cache Offloading
 - [[2026-07-25 - Standardized offload matrix pressure run|2026-07-25 — Standardized offload matrix pressure run]]
 - [[2026-07-23 - TieringOffloadingSpec matrix|2026-07-23 — Clean TieringOffloadingSpec matrix]]
 - [[2026-07-23 - TieringOffloadingSpec matrix Summary|2026-07-23 — Matrix summary]]
-- [[2026-07-24 - Five-run CephFS tuning matrix|2026-07-24 — Five-run comparison with tuned CephFS]]
+- [[2026-07-24 - Six-run CephFS tuning matrix|2026-07-24 — Six-run comparison with tuned CephFS]]
 
 ## Latest follow-up
 
