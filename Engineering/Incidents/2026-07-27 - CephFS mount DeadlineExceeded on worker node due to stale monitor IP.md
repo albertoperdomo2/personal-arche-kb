@@ -91,3 +91,20 @@ Mon-e is still registered at `10.0.0.6` in the Ceph monmap. The daemon binds to 
 ## Related
 - Prior incident: [[2026-07-20 - Ceph HEALTH_WARN orphaned OSDs crash-looping on diadochos]]
 - Prior incident: [[2026-07-25 - CephFS diagnostics forbidden and Ceph pool metrics absent on Diadochos]]
+
+## 2026-07-28 Recurrence: precise-prefix renderer scheduled to affected worker
+
+A new `kv-cache-wins-m1` precise-prefix run reproduced the same worker-local failure:
+
+- Renderer pod `kv-cache-wins-m1-render-...-6d4fj` was scheduled to `diadochos-hqxzk-worker-1-8p9vb`.
+- It remained `ContainerCreating` for more than 14 minutes.
+- The `models-storage` CephFS PVC mounted successfully on the two renderer pods scheduled to `gpu-h100-fx7c8`.
+- The affected worker's `csi-cephfsplugin` had restarted 10 times. Its prior logs repeatedly returned `Aborted: an operation with the given Volume ID ... already exists`; pod events also showed `DeadlineExceeded ... RST_STREAM ... CANCEL`.
+
+This confirms the PVC and renderer image are not the differentiator. The failure is isolated to the worker's CSI mount path, and the stale operation lock is a recurrence of the known worker-node CephFS failure mode.
+
+### BenchFlow mitigation
+
+The llm-d precise-prefix renderer overlay previously mounted the model PVC but did not copy `runtime.node_selector`, `runtime.affinity`, or `runtime.tolerations`. Model servers were constrained to healthy GPU nodes while renderer replicas could land on arbitrary workers. BenchFlow now propagates those runtime scheduling constraints to the renderer Deployment, ensuring renderers use the same selected node set as the model servers.
+
+This is a workload-scheduling mitigation, not a replacement for repairing the affected worker's CephFS CSI plugin and underlying network/storage reachability.
