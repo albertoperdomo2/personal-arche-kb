@@ -2,7 +2,7 @@
 
 ## Rule
 
-For RHOAI distributed inference using the EndpointPicker, do not attach unrelated HTTPRoutes to the same wildcard Gateway listener as an `LLMInferenceService` route.
+For RHOAI distributed inference using the EndpointPicker, do not attach unrelated HTTPRoutes to the same Gateway listener as an `LLMInferenceService` route.
 
 ## Why
 
@@ -10,17 +10,29 @@ RHOAI known issue `INFERENG-6962` documents that Istio aggregates multiple HTTPR
 
 The issue applies to any additional HTTPRoute, including a token endpoint, echo service, test route, or another LLMInferenceService route.
 
-## BenchFlow impact
+## BenchFlow implementation
 
-BenchFlow's current RHOAI template leaves `router.gateway: {}` and `router.route: {}`, which makes RHOAI use the shared `openshift-ai-inference` Gateway. This is correct only while that listener has one LLMInferenceService route and no unrelated routes.
+BenchFlow previously emitted `router.gateway: {}`, which selected the shared `openshift-ai-inference` Gateway. This is unsafe whenever another route can coexist, including independent BenchFlow users and concurrent matrix children.
 
-## Recommended design
+BenchFlow now gives every RHOAI `LLMInferenceService` release a deterministic, release-scoped Gateway in `openshift-ingress` and emits an explicit `spec.router.gateway.refs` reference. The deployment applies and waits for that Gateway before the LLMInferenceService; cleanup removes it by the same derived name even when the service no longer exists.
 
-- Keep one dedicated inference Gateway/listener for an isolated EPP route.
-- Move non-LLM routes to another Gateway.
-- For concurrent EPP-backed LLMInferenceServices, use explicit Gateway references with distinct listener hostnames rather than multiple Gateways sharing the same wildcard hostname.
-- Avoid a generic one-wildcard-Gateway-per-route scheme: it creates conflicting exposure/ownership and is not Red Hat's prescribed workaround.
-- Verify the exact RHOAI/Istio version before deciding whether an upstream Istio 1.29+ fix removes the limitation.
+The release Gateway copies the bootstrap-managed Gateway's class, Istio revision label, HTTPS listener, hostname, TLS configuration, and allowed-routes policy. This is intentional:
+
+- The RHOAI workaround is to use a separate Gateway, not to require a new public hostname.
+- Diadochos' `data-science-gateway-service-tls` certificate has only internal service DNS SANs, so a per-release external hostname would be invalid without new cluster TLS infrastructure.
+- A distinct Gateway object and listener preserves the existing endpoint/TLS path while isolating BenchFlow-generated routes.
+
+This is applied to all BenchFlow RHOAI `LLMInferenceService` modes, not only precise-prefix-cache and not only matrix runs. Raw `InferenceService` deployments are outside this routing path.
+
+## Verification Required
+
+Validate each RHOAI/Istio combination with two concurrent precise-prefix-cache releases:
+
+- Each generated HTTPRoute has only its release Gateway parent reference.
+- The routes attach to distinct Gateway objects/listeners.
+- Istio retains an `ExtProcPerRoute` override for each route.
+- EndpointPicker logs show per-request activity and prefix-cache scoring.
+- Cleanup removes only the matching release Gateway.
 
 ## Sources
 
