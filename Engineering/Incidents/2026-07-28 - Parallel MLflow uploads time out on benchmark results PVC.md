@@ -20,7 +20,7 @@ This was observed for `cpu-offloading-matrix-1d8b7c` in Diadochos on 2026-07-28.
 ## Environment
 
 - Cluster: Diadochos target cluster with the BenchFlow management cluster on aperdomo-lab.
-- Shared claim: `benchflow/benchmark-results`, 20 GiB, `ReadWriteOnce`, storage class `ibmc-vpc-block-10iops-tier`.
+- Original shared claim: `benchflow/benchmark-results`, 20 GiB, `ReadWriteOnce`, storage class `ibmc-vpc-block-10iops-tier`.
 - Workload: concurrent RHOAI `cpu-offloading` matrix children.
 - Execution image: `ghcr.io/albertoperdomo2/benchflow:manual-9215117`.
 
@@ -33,11 +33,28 @@ This was observed for `cpu-offloading-matrix-1d8b7c` in Diadochos on 2026-07-28.
 
 ## Root Cause
 
-BenchFlow's remote artifact handoff uses a single shared `benchmark-results` PVC. That is safe only while one target-cluster execution accesses it at a time. On Diadochos the claim is IBM VPC block storage with `ReadWriteOnce`, so it cannot be mounted concurrently across nodes. Parallel matrix children make the existing shared-results design race during benchmark, collection, and reader-pod artifact retrieval.
+BenchFlow's remote artifact handoff uses a single shared `benchmark-results` PVC. That is safe only while one target-cluster execution accesses it at a time. On Diadochos the claim was IBM VPC block storage with `ReadWriteOnce`, so it could not be mounted concurrently across nodes. Parallel matrix children made the shared-results design race during benchmark, collection, and reader-pod artifact retrieval.
 
 ## Resolution
 
-Immediate operational mitigation: run executions that share this RWO claim sequentially. Do not treat an `upload-to-mlflow` TaskRun failure in this state as an MLflow service or credential problem; retrieve the source artifacts only after the volume is no longer attached elsewhere.
+On 2026-07-28 the old data was intentionally discarded and `benchflow/benchmark-results` was replaced with:
+
+- Storage class: `rook-cephfs`
+- Access mode: `ReadWriteMany`
+- Capacity: `100Gi`
+
+The volume root was initialized as `container_file_t:s0:c14,c27` with mode `1777`. A normal `benchflow-runner` pod successfully created and removed a test directory, confirming that arbitrary OpenShift UIDs can use it concurrently. The temporary SCC and service account used solely to initialize permissions were deleted afterwards.
+
+Future target-cluster bootstrap reconciliations must include the same immutable claim settings:
+
+```bash
+bflow bootstrap \
+  --target-kubeconfig /path/to/diadochos/kubeconfig \
+  --cluster-name psap-h100-diadochos \
+  --results-storage-class rook-cephfs \
+  --results-access-mode ReadWriteMany \
+  --results-size 100Gi
+```
 
 ## Prevention / Runbook
 
