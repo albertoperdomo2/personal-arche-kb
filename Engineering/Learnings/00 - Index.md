@@ -6,7 +6,7 @@ One file per learning keeps them searchable. Name them descriptively (e.g. `vLLM
 
 ## Learnings
 - [[Arche Vega-Lite renderer guardrails]] — why valid charts can fail Arche's pre-render safety/feature guard, plus safe condition and composition workarounds.
-- [[CephFS performance tuning for KV cache offloading]] — six root causes of CephFS regression in KV cache offloading (replication, OSD memory, MDS sizing, mount options, FS tier threads, Squid bug) and the tuning applied to diadochos.
+- [[CephFS performance tuning for KV cache offloading]] — shareable, end-to-end CephFS tuning guide for vLLM KV-cache workloads, including OpenShift commands, manifests, validation, performance results, and rollback.
 - [[CephFS tuning guide - concepts and rationale]] — concise, implementation-oriented guide to the Ceph/Rook, 200G networking, multi-NIC OSD, StorageClass, PVC, and vLLM settings used for KV-cache offloading, including verification and rollback.
 - [[Routing Ceph over 200G NICs on OCP with PCI passthrough VFs]] — full investigation of 4 networking approaches (3 failed, 1 succeeded), big-bang MON migration procedure, 6 hidden gotchas, and monmap repair for cluster recovery. 1.3 GB/s write, 1.7 GB/s read verified on 200G fabric.
 - [[Forge extends only applies to presets]] — Forge `extends` merges preset-level fields, not top-level config.
