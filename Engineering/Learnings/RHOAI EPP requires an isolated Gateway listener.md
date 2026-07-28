@@ -1,8 +1,8 @@
-# RHOAI EPP requires an isolated Gateway listener
+# RHOAI EPP requires isolated release Gateways
 
 ## Rule
 
-For RHOAI distributed inference using the EndpointPicker, do not attach unrelated HTTPRoutes to the same Gateway listener section as an `LLMInferenceService` route.
+For RHOAI distributed inference using the EndpointPicker, do not attach unrelated HTTPRoutes to the same Gateway listener as an `LLMInferenceService` route.
 
 ## Why
 
@@ -12,38 +12,38 @@ The issue applies to any additional HTTPRoute, including a token endpoint, echo 
 
 ## BenchFlow implementation
 
-BenchFlow emits an explicit `spec.router.gateway.refs` entry for every RHOAI `LLMInferenceService`. The reference selects a deterministic, release-scoped `sectionName` on the bootstrap-managed `openshift-ai-inference` Gateway in `openshift-ingress`.
+Each RHOAI `LLMInferenceService` release receives a deterministic, compact Gateway in `openshift-ingress` and emits an explicit `spec.router.gateway.refs` reference to it. The Gateway copies the bootstrap-managed `openshift-ai-inference` Gateway's class, Istio revision label, HTTPS listener, hostname, TLS configuration, and allowed-routes policy.
 
-Each release listener:
+The Gateway name is `benchflow-<20-hex>`, derived from deployment namespace and release name. It deliberately avoids the human-readable release prefix.
 
-- Copies the shared Gateway's working HTTPS TLS and allowed-routes policy.
-- Omits the hostname. Gateway API rejects a duplicate hostname/port/protocol listener, while the hostname-less listener is a distinct valid section.
-- Is appended with an atomic JSON Patch, without replacing concurrent release listeners.
-- Is removed by a JSON Patch that first tests the listener name at the selected index, preventing concurrent cleanup from deleting another release's listener.
+Istio derives a Deployment label and Service name from `<gateway-name>-<gateway-class>`. Kubernetes labels have a 63-character limit. The original BenchFlow names such as `benchflow-cpu-offloading-m3-82fdd75610-gateway` made the generated label longer than 63 characters, so Istio could not create the Deployment or LoadBalancer Service. The Gateway then showed `Programmed=False`, `ServiceNotFound`, and `AddressNotUsable`.
 
-Bootstrap reuses an existing shared Gateway instead of applying its base single-listener manifest again, preventing later bootstrap runs from erasing active release listeners.
+Compact names resolve that failure while preserving the correct per-Gateway isolation needed for INFERENG-6962.
 
-## Diadochos finding
+## Diadochos verification
 
-A release-scoped Gateway object is not viable on Diadochos. The OpenShift GatewayClass accepted an arbitrary Gateway but left it `Programmed=False` with:
+On 2026-07-28, a disposable compact Gateway probe in `openshift-ingress` became `Accepted=True` and `Programmed=True` in roughly 35 seconds. Istio created:
 
-- `ServiceNotFound`: the LoadBalancer Service resource was missing.
-- `AddressNotUsable`: no corresponding service DNS name could be resolved.
+- Deployment `benchflow-probe-7a58dccf52-openshift-ai-inference`
+- LoadBalancer Service `benchflow-probe-7a58dccf52-openshift-ai-inference`
 
-The existing shared Gateway has the only provisioned load-balancer Service. A disposable hostname-less listener appended to that Gateway was immediately `Accepted=True` and `Programmed=True`, using the existing load balancer, DNS, and TLS configuration. The disposable listener was removed after the test.
+The probe and its controller-owned resources were deleted immediately after verification.
+
+A hostname-less listener-section alternative is not viable: Gateway API allows only one listener for the `(443, HTTPS, empty hostname)` combination, so parallel BenchFlow releases fail validation.
 
 ## Scope and verification
 
 This applies to all BenchFlow RHOAI `LLMInferenceService` modes, including default, approximate-prefix-cache, and precise-prefix-cache. Raw `InferenceService` deployments are outside this router/EPP path.
 
-The listener lifecycle and rendering are locally validated. Before accepting the routing path on a RHOAI/Istio combination, launch two concurrent precise-prefix-cache releases and verify:
+Before accepting the routing path on a RHOAI/Istio combination, launch two concurrent precise-prefix-cache releases and verify:
 
-- Each generated HTTPRoute selects only its release listener section.
+- Each generated HTTPRoute has only its release Gateway parent reference.
+- The two HTTPRoutes attach to distinct Gateway objects and listeners.
 - Istio retains an `ExtProcPerRoute` override for each route.
 - EndpointPicker logs show per-request activity and prefix-cache scoring.
-- Cleanup removes only the matching listener.
+- Cleanup removes only the matching release Gateway.
 
 ## Sources
 
 - [RHOAI 3.3 known issue INFERENG-6962](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/release_notes/known-issues_relnotes)
-- [RHOAI gateway discovery supports explicit Gateway selection](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/deploy_models_using_distributed_inference_with_llm-d/gateway-discovery-for-llmd_gateway-discovery)
+- [RHOAI gateway discovery supports explicit Gateway selection](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/deploy_models_using_distributed_inference_with_llm-d/gateway-discovery-for-llmd)
