@@ -41,7 +41,4 @@ The source counters show a real shift: tuned-2 reports **54.57% local HBM hit**,
 
 The counters alone do not prove that CephFS is faster. The most likely explanation is hierarchy state: tuned-2 retained a much larger reusable working set in HBM during this run, so requests were served locally instead of requiring external KV loads. That can result from different cache residency/eviction timing, request scheduling, or prefix reuse realization—not necessarily from lower CephFS bandwidth demand. The high local-hit share is consistent with less KV movement and therefore lower transfer demand.
 
-This conclusion is also constrained by the run evidence: tuned-2 has the same seed and concurrency target, zero client errors, and the strongest end-to-end result, but it is still one repetition and lacks direct CephFS byte/IOPS telemetry. To distinguish “better HBM residency” from workload-phase variation, repeat tuned-2 and collect KV block residency/eviction, external-load counts, and Ceph client read/write counters at the same cadence.Traceback (most recent call last):
-  File "<stdin>", line 14, in <module>
-  File "<stdin>", line 4, in P
-FileNotFoundError: [Errno 2] No such file or directory: 'experiment-256-clean/6ded92329a4844c5a4c6f11f5cab764c/benchmark/profile_export_aiperf.json'
+This conclusion is also constrained by the run evidence: tuned-2 has the same seed and concurrency target, zero client errors, and the strongest end-to-end result, but it is still one repetition and lacks direct CephFS byte/IOPS telemetry. To distinguish “better HBM residency” from workload-phase variation, repeat tuned-2 and collect KV block residency/eviction, external-load counts, and Ceph client read/write counters at the same cadence.
