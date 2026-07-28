@@ -58,3 +58,24 @@ Figure 4 shows AgentX child-branch outcomes from the native AIPerf branch statis
 ```vega-lite
 {"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","width":760,"height":320,"title":"Figure 4 — Session and branch outcomes","data":{"values":[{"configuration":"No offload","outcome":"Children completed","count":348},{"configuration":"No offload","outcome":"Children errored","count":0},{"configuration":"No offload","outcome":"Children truncated","count":0},{"configuration":"CPU 64 GiB","outcome":"Children completed","count":348},{"configuration":"CPU 64 GiB","outcome":"Children errored","count":0},{"configuration":"CPU 64 GiB","outcome":"Children truncated","count":0},{"configuration":"CPU 64 GiB + NVMe","outcome":"Children completed","count":348},{"configuration":"CPU 64 GiB + NVMe","outcome":"Children errored","count":0},{"configuration":"CPU 64 GiB + NVMe","outcome":"Children truncated","count":0},{"configuration":"CPU 64 GiB + CephFS (tuned, 2)","outcome":"Children completed","count":0},{"configuration":"CPU 64 GiB + CephFS (tuned, 2)","outcome":"Children errored","count":0},{"configuration":"CPU 64 GiB + CephFS (tuned, 2)","outcome":"Children truncated","count":0}]},"mark":"bar","encoding":{"x":{"field":"configuration","type":"nominal","title":"Configuration"},"xOffset":{"field":"outcome"},"y":{"field":"count","type":"quantitative","title":"Child branches (count)","scale":{"zero":true}},"color":{"field":"outcome","type":"nominal","title":"Outcome","scale":{"scheme":"category10"}},"tooltip":[{"field":"configuration"},{"field":"outcome"},{"field":"count"}]},"config":{"view":{"stroke":null}}}
 ```
+
+## Session metrics and deltas versus no offload
+
+The table uses completed AIPerf requests as the comparable session-completion measure available across all four selected profiles. Deltas are calculated against the no-offload baseline (1,057 completed requests).
+
+| Configuration | Completed sessions/requests | Delta vs no offload | Errors |
+|---|---:|---:|---:|
+| No offload | 1,057 | baseline | 0 |
+| CPU 64 GiB | 2,176 | +1,119 (+105.9%) | 0 |
+| CPU 64 GiB + NVMe | 2,343 | +1,286 (+121.7%) | 0 |
+| CPU 64 GiB + CephFS (tuned, 2) | 2,766 | +1,709 (+161.7%) | 0 |
+
+The retained branch-level export is complete for tuned-2 but not for the other selected run bundles, so child-branch deltas are not inferred from request counts.
+
+## Scheduler running/waiting requests
+
+The corrected tuned-2 bundle contains the native running/waiting scheduler archive and is plotted below. The other three selected bundles do not contain their raw scheduler archive in the retained local artifacts; they are marked unavailable rather than fabricated. The panel order and report order remain: no offload, CPU, CPU+NVMe, tuned CephFS 2.
+
+Figure 5 — Tuned-2 running and waiting requests.
+
+The native scheduler samples show the actual queue/running behavior for the corrected CephFS run.\n\n[See Figure 5 above in the telemetry section.]\n
