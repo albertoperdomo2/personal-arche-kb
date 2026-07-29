@@ -1,15 +1,17 @@
 ---
-title: Qwen3.6-35B-A3B KV-cache offloading
-date: 2026-07-28
-type: research-model-index
-model: Qwen3.6-35B-A3B
-topic: KV Cache Offloading
+title: "Qwen3.6-35B-A3B KV-cache offloading"
+date: "2026-07-29"
+type: "research-model-index"
+model: "Qwen3.6-35B-A3B"
+topic: "KV Cache Offloading"
+status: "active"
 ---
 
 # Qwen3.6-35B-A3B
 
 ## Reports
 
+- [[2026-07-29 - Qwen3.6-35B-A3B - U0.55 KV-cache offload matrix|2026-07-29 — U0.55 four-tier offload matrix with full CephFS pool telemetry]]
 - [[2026-07-28 - Clean U0.85 offload matrix|2026-07-28 — Clean U0.85 offload matrix with NVMe and CephFS telemetry]]
 - [[2026-07-25 - Standardized offload matrix batch 3|2026-07-25 — Standardized offload matrix batch 3]]
 - [[2026-07-25 - Standardized offload matrix pressure run|2026-07-25 — Standardized offload matrix pressure run]]
@@ -19,19 +21,19 @@ topic: KV Cache Offloading
 
 ## Latest working conclusion
 
-At U=0.85 and AgentX C=32, the controlled 2026-07-28 matrix measured 1.085 req/s without offload, 1.426 req/s with CPU 64 GiB, 1.518 req/s with CPU+NVMe, and 1.518 req/s with CPU+CephFS. NVMe and CephFS both completed 52 sessions and had nearly identical prompt-source, KV-transfer, and storage-byte behavior. This establishes equality for the observed single runs, not general equivalence: repetitions, explicit NVMe tier cleaning, and storage-latency telemetry are still required.
+At U=0.55 and AgentX C=32, the 2026-07-29 matrix measured 0.578 req/s without offload, 1.172 req/s with CPU 64 GiB, 1.291 req/s with CPU+NVMe, and 1.284 req/s with CPU+CephFS. NVMe and CephFS completed 44 sessions each and differed by only 0.56% in request throughput, which is near-equality for these single runs rather than general equivalence.
 
-CephFS was directly exercised: the PVC grew to 372.6 GiB and the data pool averaged 291.9 MiB/s reads plus 227.5 MiB/s writes. The filesystem remained Ready; cluster health was HEALTH_WARN because of MON_DISK_LOW. No store-refusal storm, slow-op evidence, pod restart, OOM, or traceback was present.
+CephFS was directly exercised over the full 35-minute benchmark: `kvcache-fs-data0` has 141 samples at 15-second cadence. Raw full-window averages were 575.5 MiB/s reads and 198.4 MiB/s writes; after the five-minute rate-window carry-in cleared, they were 269.8 and 214.7 MiB/s. The PVC grew from 0 to 374.0 GiB. The filesystem remained Ready; cluster health was `HEALTH_WARN` because of `MON_DISK_LOW` and `RECENT_CRASH`. No store-refusal storm, slow operation, model restart, OOM, or traceback was present.
 
 ## Current MLflow run registry
 
 | Configuration | Run |
 |---|---|
-| No offload | [b69da750bfbd43afaf8924c74134146e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/b69da750bfbd43afaf8924c74134146e?workspace=benchflow) |
-| CPU 64 GiB | [8e16a5150dab436ca843438e09ea9248](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/8e16a5150dab436ca843438e09ea9248?workspace=benchflow) |
-| CPU 64 GiB + NVMe | [80d659b915114e9d9cf8e0d88c45cf89](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/80d659b915114e9d9cf8e0d88c45cf89?workspace=benchflow) |
-| CPU 64 GiB + CephFS | [decf13e8407d46c6bd342714b5864feb](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/decf13e8407d46c6bd342714b5864feb?workspace=benchflow) |
+| No offload | [6b1884118aec42fbbaf9ed9accc1c05e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/6b1884118aec42fbbaf9ed9accc1c05e?workspace=benchflow) |
+| CPU-only offload | [326fb9ac213b4a7facaf7a087f31e623](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/326fb9ac213b4a7facaf7a087f31e623?workspace=benchflow) |
+| CPU + NVMe | [2b4bbe4d3919402795ade534cea0e5ff](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/2b4bbe4d3919402795ade534cea0e5ff?workspace=benchflow) |
+| CPU + CephFS | [20ea91a83f02424fb391bbd4a44d3cc6](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/256/runs/20ea91a83f02424fb391bbd4a44d3cc6?workspace=benchflow) |
 
 ## Next experiment
 
-Repeat all four cells at least three times with randomized order and explicit secondary-tier cleaning. Retain 15-second telemetry and add NVMe await/queue depth plus Ceph client, MDS, and OSD latency before the C=64 pressure step.
+Repeat all four U0.55 cells at least three times with randomized order, explicit secondary-tier cleaning, matched node placement, full 15-second Ceph pool telemetry, and working Ceph MDS/OSD latency plus NVMe await/queue-depth metrics.
