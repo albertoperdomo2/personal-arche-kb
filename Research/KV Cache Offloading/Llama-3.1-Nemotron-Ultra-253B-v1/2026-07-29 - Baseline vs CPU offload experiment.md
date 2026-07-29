@@ -141,8 +141,10 @@ The ITL regression deserves follow-up but is not yet causal evidence of PCIe con
 - [[2026-07-29 - Baseline vs CPU offload experiment/01 - Prompt-token sources - Baseline|Prompt-token sources — Baseline]]
 - [[2026-07-29 - Baseline vs CPU offload experiment/02 - Prompt-token sources - CPU offload|Prompt-token sources — CPU offload]]
 - [[2026-07-29 - Baseline vs CPU offload experiment/03 - KV-cache utilization|KV-cache utilization]]
-- [[2026-07-29 - Baseline vs CPU offload experiment/04 - Scheduler pressure|Scheduler pressure]]
-- [[2026-07-29 - Baseline vs CPU offload experiment/05 - CPU transfer and model memory|CPU transfer and model memory]]
+- [[2026-07-29 - Baseline vs CPU offload experiment/04 - Running requests|Running requests]]
+- [[2026-07-29 - Baseline vs CPU offload experiment/05 - Waiting requests|Waiting requests]]
+- [[2026-07-29 - Baseline vs CPU offload experiment/06 - CPU transfer|CPU transfer]]
+- [[2026-07-29 - Baseline vs CPU offload experiment/07 - Model memory|Model memory]]
 
 The time-series articles retain the native 15-second Prometheus cadence. Duplicate `kserve_vllm:*` and `vllm:*` scrape streams were identical; the charts use the `kserve_vllm:*` family once to avoid double-counting.
 
