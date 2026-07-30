@@ -174,16 +174,22 @@ CephFS pool telemetry averages 223.5 MiB/s writes and 13.9 MiB/s reads, with 605
 
 Native time series:
 
-- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/01 - Prompt-token sources - Baseline and CPU|Prompt-token sources — baseline and CPU]]
-- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/02 - Prompt-token sources - Secondary tiers|Prompt-token sources — NVMe and CephFS]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/01 - Prompt-token sources - No offload|Prompt-token sources — no offload]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/02 - Prompt-token sources - CPU offload|Prompt-token sources — CPU offload]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/02b - Prompt-token sources - NVMe|Prompt-token sources — NVMe]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/02c - Prompt-token sources - CephFS|Prompt-token sources — CephFS]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/03 - GPU KV-cache utilization|GPU KV-cache utilization]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/04 - Scheduler pressure - Baseline and CPU|Scheduler pressure — baseline and CPU]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/05 - Scheduler pressure - Secondary tiers|Scheduler pressure — NVMe and CephFS]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/06 - KV transfer bandwidth|KV transfer bandwidth]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/07 - Generation throughput|Generation throughput]]
 - [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/08 - TTFT P90|TTFT P90]]
-- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/09 - NVMe performance|NVMe performance]]
-- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/10 - CephFS performance|CephFS performance]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/09 - NVMe throughput|NVMe throughput]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/09a - NVMe IOPS|NVMe IOPS]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/09b - NVMe busy time|NVMe busy time]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/10 - CephFS throughput|CephFS throughput]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/10a - CephFS IOPS|CephFS IOPS]]
+- [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comparison/10b - CephFS capacity|CephFS capacity]]
 
 ## Validity and limitations
 
