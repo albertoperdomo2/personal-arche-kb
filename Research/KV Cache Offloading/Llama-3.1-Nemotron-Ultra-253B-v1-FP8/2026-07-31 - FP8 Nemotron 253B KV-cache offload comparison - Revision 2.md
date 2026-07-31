@@ -41,59 +41,14 @@ This is **Revision 2** of [[2026-07-30 - FP8 Nemotron 253B KV-cache offload comp
 
 ## AIPerf benchmark invocation
 
-The MLflow artifacts record the following complete AIPerf commands. The workload arguments are identical across cells; only the service URL and artifact directory identify the deployment being exercised.
+The MLflow artifacts record the following complete AIPerf command. It is the same benchmark invocation for all four cells; BenchFlow substitutes only the deployment-specific service URL and artifact directory.
 
-### No offload
+### Recorded command
 
 ```bash
 aiperf profile --model 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8' \
   --url 'https://cpu-offloading-m1-ae1ba83977-kserve-workload-svc.benchflow.svc.cluster.local:8000' \
   --artifact-dir '/benchmark-results/remote-jobs/benchflow-benchmark-cpu-offloading-d3ca/benchmark' \
-  --ui None --benchmark-duration 1800 --concurrency 32 \
-  --endpoint '/v1/chat/completions' --endpoint-type 'chat' \
-  --hf-weka-repo 'semianalysisai/cc-traces-weka-with-subagents-060826' \
-  --max-context-length 131072 --public-dataset 'weka_hf' --random-seed 42 \
-  --scenario 'inferencex-agentx-mvp' --streaming --tokenizer-trust-remote-code \
-  --use-server-token-count \
-  --tokenizer 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8'
-```
-
-### CPU offload 256 GiB
-
-```bash
-aiperf profile --model 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8' \
-  --url 'https://cpu-offloading-m2-ae1ba83977-kserve-workload-svc.benchflow.svc.cluster.local:8000' \
-  --artifact-dir '/benchmark-results/remote-jobs/benchflow-benchmark-cpu-offloading-96bc/benchmark' \
-  --ui None --benchmark-duration 1800 --concurrency 32 \
-  --endpoint '/v1/chat/completions' --endpoint-type 'chat' \
-  --hf-weka-repo 'semianalysisai/cc-traces-weka-with-subagents-060826' \
-  --max-context-length 131072 --public-dataset 'weka_hf' --random-seed 42 \
-  --scenario 'inferencex-agentx-mvp' --streaming --tokenizer-trust-remote-code \
-  --use-server-token-count \
-  --tokenizer 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8'
-```
-
-### CPU plus NVMe
-
-```bash
-aiperf profile --model 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8' \
-  --url 'https://cpu-offloading-m3-ae1ba83977-kserve-workload-svc.benchflow.svc.cluster.local:8000' \
-  --artifact-dir '/benchmark-results/remote-jobs/benchflow-benchmark-cpu-offloading-df06/benchmark' \
-  --ui None --benchmark-duration 1800 --concurrency 32 \
-  --endpoint '/v1/chat/completions' --endpoint-type 'chat' \
-  --hf-weka-repo 'semianalysisai/cc-traces-weka-with-subagents-060826' \
-  --max-context-length 131072 --public-dataset 'weka_hf' --random-seed 42 \
-  --scenario 'inferencex-agentx-mvp' --streaming --tokenizer-trust-remote-code \
-  --use-server-token-count \
-  --tokenizer 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8'
-```
-
-### CPU plus CephFS
-
-```bash
-aiperf profile --model 'nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8' \
-  --url 'https://cpu-offloading-m4-ae1ba83977-kserve-workload-svc.benchflow.svc.cluster.local:8000' \
-  --artifact-dir '/benchmark-results/remote-jobs/benchflow-benchmark-cpu-offloading-9069/benchmark' \
   --ui None --benchmark-duration 1800 --concurrency 32 \
   --endpoint '/v1/chat/completions' --endpoint-type 'chat' \
   --hf-weka-repo 'semianalysisai/cc-traces-weka-with-subagents-060826' \
