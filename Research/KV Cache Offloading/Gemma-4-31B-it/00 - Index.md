@@ -10,7 +10,7 @@ topic: "KV Cache Offloading"
 
 ## Current conclusion
 
-At TP2/U0.92/C8 with a 256 GiB host tier, offload is strongly beneficial. CephFS remains the clean single-seed winner at 0.1844 req/s and 145.4 output tok/s, 3.10× and 4.41× the no-offload baseline; CPU-only reaches 0.1202 req/s. The tuned NVMe 64-read/32-write cell improves to 0.1113 req/s and 82.6 output tok/s, but remains conditionally accepted because 11 store refusals, sustained deferred requests, and 210.21-second P95 TTFT preserve a severe latency tail.
+At TP2/U0.92/C8 with a 256 GiB host tier, offload is strongly beneficial. The selected NVMe 64-read/64-write cell and CephFS form the clean top tier: NVMe reaches 0.1771 req/s and 146.1 output tok/s with zero store refusals, while CephFS reaches 0.1844 req/s and 145.4 output tok/s. CPU-only reaches 0.1202 req/s. The thread sweep identifies write-side filesystem concurrency as the leading explanation for the earlier NVMe regressions; this remains a single-seed conclusion pending repetition.
 
 ## Reports
 
