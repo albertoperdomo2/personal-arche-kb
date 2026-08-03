@@ -22,6 +22,13 @@ Research is organized by model where the model is known:
 
 The dated reports in each model directory are the canonical organized copies. Earlier theme-level paths remain as historical compatibility records because Arche currently provides article creation/update but no move/rename operation.
 
+## Methodology
+
+- [[Experiment Methodology]] — run structure and acceptance rules.
+- [[01 - Calibration Protocol]] — finding the pressure point per model.
+- [[02 - Per-Model Methodology Template]] — per-model run template.
+- [[03 - KV Transfer Metrics and PromQL]] — verified metric inventory, PromQL for retrieval/stall latency, interpretation identities, measurement traps, and the minimum reporting set. Names verified against `vllm@4ee9702`.
+
 ## Workload
 
 All standardized runs use the same workload: [[AgentX Workload Definition|AgentX MVP]] (AIPerf `aiperf-agentx-inference`, trace `semianalysisai/cc-traces-weka-with-subagents-060826`). That note characterizes the generation mechanism — trace corpus, session/turn/subagent topology, arrival structure, cache-bust, warmup/profiling phases — distinct from the per-model run outcomes recorded below.
