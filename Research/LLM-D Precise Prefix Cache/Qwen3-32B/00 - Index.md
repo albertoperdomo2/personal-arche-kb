@@ -12,5 +12,6 @@ experiment: "LLM-D precise prefix cache with Guidellm"
 - [[2026-08-05 - Qwen3-32B precise-prefix renderer report - Revision 1]]
 - [[2026-08-05 - Qwen3-32B latency appendix - Revision 1]]
 - [[2026-08-05 - Qwen3-32B ITL appendix - Revision 1]]
+- [[2026-08-05 - Qwen3-32B TTFT distribution appendix - Revision 1]]
 
 Research question: does serving the precise-prefix render endpoint from the vLLM model pods differ materially from three dedicated CPU renderer pods under the same Guidellm workload?
