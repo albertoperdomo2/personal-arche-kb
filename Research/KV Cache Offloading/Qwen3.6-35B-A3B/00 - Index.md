@@ -11,6 +11,7 @@ status: "active"
 
 ## Reports
 
+- [[2026-08-08 - CPU offload two-replica external-tier lookup investigation|2026-08-08 — CPU offload two-replica external-tier lookup investigation]]
 - [[2026-07-29 - Qwen3.6-35B-A3B - U0.55 KV-cache offload matrix|2026-07-29 — U0.55 four-tier offload matrix with full CephFS pool telemetry]]
 - [[2026-07-28 - Clean U0.85 offload matrix|2026-07-28 — Clean U0.85 offload matrix with NVMe and CephFS telemetry]]
 - [[2026-07-25 - Standardized offload matrix batch 3|2026-07-25 — Standardized offload matrix batch 3]]
