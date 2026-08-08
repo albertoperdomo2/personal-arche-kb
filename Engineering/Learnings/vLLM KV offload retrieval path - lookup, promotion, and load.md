@@ -18,6 +18,8 @@ All code links are pinned to `vllm-project/vllm@4ee9702` (`4ee9702bee668a447e998
 
 > **Re-verified 2026-08-08** against a local checkout at `0601850` (upstream/main): the architecture and the line anchors cited here are unchanged (verified: `get_num_new_matched_tokens` still at `offloading/scheduler.py:816`, `update_connector_output` at `:1280`, core scheduler call site at `v1/core/sched/scheduler.py:777-781`, `_lookup` at `:631`). The additions below (§1 chunk-key derivation, §2 `HIT_PENDING` scan semantics, §6 `_chunks_being_loaded` gating) were read directly from `0601850`.
 
+> **Worked example:** for the same machinery as a guided tutorial — one 400-token request traced through five engine steps, with full concept explanations (block, chunk, hash, group, `ref_cnt`, `LookupResult`), figures, and code pinned to `vllm@0601850` — see [[vLLM KV offload lookup - worked example]].
+
 ---
 
 ## 0. Headline: there is no speculative prefetch
