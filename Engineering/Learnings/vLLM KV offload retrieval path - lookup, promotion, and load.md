@@ -6,6 +6,8 @@ topic: KV cache offloading
 repo: vllm-project/vllm
 commit: 4ee9702bee668a447e9983a6aefc16ebbc3ad32e
 commit_date: 2026-07-31
+reverified_commit: 0601850
+reverified_date: 2026-08-08
 ---
 
 # vLLM KV offload retrieval path — lookup, promotion, and load
@@ -13,6 +15,8 @@ commit_date: 2026-07-31
 How an offloaded KV block gets back into GPU memory when a request needs it, across the CPU primary tier and the secondary tiers (filesystem/NVMe, object store, P2P).
 
 All code links are pinned to `vllm-project/vllm@4ee9702` (`4ee9702bee668a447e9983a6aefc16ebbc3ad32e`, 2026-07-31, on `upstream/main`), so line anchors stay correct even as `main` moves. This covers the **native** offloading path only — see [[vLLM KV block prefetch architecture]] for how it compares to the LMCache connector and to model-weight prefetch.
+
+> **Re-verified 2026-08-08** against a local checkout at `0601850` (upstream/main): the architecture and the line anchors cited here are unchanged (verified: `get_num_new_matched_tokens` still at `offloading/scheduler.py:816`, `update_connector_output` at `:1280`, core scheduler call site at `v1/core/sched/scheduler.py:777-781`, `_lookup` at `:631`). The additions below (§1 chunk-key derivation, §2 `HIT_PENDING` scan semantics, §6 `_chunks_being_loaded` gating) were read directly from `0601850`.
 
 ---
 
@@ -55,6 +59,8 @@ $$
 $$
 
 A chunk is offloadable only once all its GPU blocks are allocated *and* computed, which is why `storable_chunks()` takes the min of computed-token chunks and allocated-block chunks (`[scheduler.py:338-364](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L338-L364)`).
+
+**Chunk-key derivation.** The connector builds one `OffloadKey` per chunk, lazily, in `update_offload_keys` (`[scheduler.py:312-324](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L312-L324)`). For each KV group it walks `req.block_hashes` in steps of `hashes_per_chunk`, starting at index `hashes_per_chunk * len(offload_keys) + hashes_per_chunk - 1`. So chunk $i$'s key is derived from the hash of the chunk's **last** token position ($\text{block\_hashes}[(i+1)\cdot\text{hpc} - 1]$) — consistent with vLLM's prefix-cache convention that a block hash identifies the prefix ending at that token. Keys are appended as the request's hash list grows, so `len(offload_keys) == ceil(num_tokens / tokens_per_chunk)` once the prompt is fully hashed.
 
 ### The layer model
 
@@ -101,6 +107,8 @@ The core scheduler asks the connector how many tokens it can supply beyond the l
 - `[offloading/scheduler.py:816](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L816)` — `get_num_new_matched_tokens`.
 - `[offloading/scheduler.py:631](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L631)` — `_lookup`, the real work.
 
+`get_num_new_matched_tokens` returns `(num_hit_tokens, load_async)`; the second element is exactly `bool(num_hit_tokens)` and means "load asynchronously between scheduler steps" (`[:890](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L890)`).
+
 `_lookup` is more subtle than a prefix scan because of hybrid models. It iterates **full-attention groups first**, then **sliding-window groups**, and re-runs the loop when a later group tightens `max_hit_size_tokens` enough to invalidate an earlier group's answer — a convergence loop, not a single pass.
 
 
@@ -115,6 +123,13 @@ Per-chunk, `manager.lookup()` on the CPU tier (`[cpu/manager.py:113](https://git
 - `HIT` — present and `is_ready`.
 - `HIT_PENDING` — the slot is allocated but its **GPU→CPU store is still in flight**. (Not "promotion in progress" — that distinction matters when debugging.)
 - `MISS` — not in the pool.
+
+**How the scans treat the non-`HIT` states** (`[scheduler.py:550-580](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L550-L580)`):
+
+- `HIT_PENDING` **counts as a hit** for the streak *and* sets `defer_lookup`, so the request is still delayed that step — a block whose store is in flight is not readable yet, even though it is already claimed.
+- `RETRY` does not count, keeps scanning (to seed async lookups), and sets `defer_lookup`.
+- `MISS` breaks the loop.
+- If any `defer_lookup` fired, `_lookup` returns `None` → the request is parked and re-examined next step.
 
 ### Stage 2 — Park the request
 
@@ -180,7 +195,7 @@ It **reserves the CPU slot immediately** but **defers the I/O**:
 1. catch-all `_maybe_process_finished_jobs()` (covers steps with no scheduled requests),
 2. `serve_external_requests()` on each tier (lets P2P serve remote peers via the `ParentManager` facade, `[tiering/base.py:63](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/base.py#L63)`),
 3. reset the per-step polling gate,
-4. `**_flush_pending_promotions()**` (`[tiering/manager.py:429](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/manager.py#L429)`) — **one batched `submit_load` per (tier, request)**,
+4. **`_flush_pending_promotions()**` (`[tiering/manager.py:429](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/manager.py#L429)`) — **one batched `submit_load` per (tier, request)**,
 5. `on_schedule_end()` on each tier (which is where `AsyncLookupManager.flush()` fires).
 
 Batching per (tier, request) is what turns "N chunk lookups" into one I/O job.
@@ -258,7 +273,7 @@ A related subtlety in `_maximal_prefix_lookup`: the scan deliberately **does not
 | `ref_cnt = -1` means "write in flight"                     | Distinguishes "allocated but not yet valid" from "resident"; surfaces as `HIT_PENDING`. Set in `BlockStatus.__init__`; `is_ready` is defined as `ref_cnt >= 0` | `[cpu/policies/base.py:20-33](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/cpu/policies/base.py#L20-L33)`                                                                                                                                                                                                |
 | One load **or** one-or-more stores per request, never both | Prevents cross-direction races on the same request's blocks                                                                                                    | `[:960](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L960)`, `[:1176](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L1176)`                  |
 | A request with in-flight transfers is deferred outright    | Same reason                                                                                                                                                    | `[:842](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L842)`                                                                                                                                                                                            |
-| `_chunks_being_loaded` suppresses duplicate loads          | Two requests sharing a prefix must not both pull it; the second is delayed instead                                                                             | `[:490](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L490)`, `[:769-793](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L769-L793)`           |
+| `_chunks_being_loaded` suppresses duplicate loads          | Two requests sharing a prefix must not both pull it; the second is delayed instead. **Only active when GPU prefix caching is enabled** (`enable_prefix_caching`); otherwise it is `None` and the dedup gate is skipped entirely (`[scheduler.py:489-495](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L489-L495)`) | `[:490](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L490)`, `[:769-793](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L769-L793)`           |
 | `jobs_to_flush` fences GPU block reuse                     | If the KV cache manager re-allocates a GPU block with a pending store, the worker is told to `wait()` on that job before the block is overwritten              | `[:1237-1249](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py#L1237-L1249)`, `[worker.py:292](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py#L292)` |
 | `reset_cache` drains tiers before resetting primary        | A tier mid-`readv` into primary memory would corrupt it; a stuck tier blocks *visibly* here rather than corrupting silently                                    | `[tiering/manager.py:779-819](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/manager.py#L779-L819)`, `[tiering/base.py:286](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/base.py#L286)`                                           |
 | Secondary tiers are **not** reset on `reset_cache`         | Persistent stores (FS, object) keep data across sleep/wake and weight updates                                                                                  | `[tiering/manager.py:788-791](https://github.com/vllm-project/vllm/blob/4ee9702bee668a447e9983a6aefc16ebbc3ad32e/vllm/v1/kv_offload/tiering/manager.py#L788-L791)`                                                                                                                                                                                                |
@@ -291,7 +306,7 @@ Metrics that report on this path, and where they come from:
 ## 8. Gotchas
 
 1. `**RETRY` is not an error.** It means "promotion started" or "async lookup not yet resolved". Treating it as a failure signal misreads the whole state machine.
-2. `**HIT_PENDING` on the CPU tier means a store is in flight**, not a promotion.
+2. `**HIT_PENDING` on the CPU tier means a store is in flight**, not a promotion. In the scan loops it still counts toward the hit streak, but the request is delayed that step (the block is claimed, not readable).
 3. **A full CPU tier degrades secondary tiers to useless**, silently. `_initiate_promotion` returns `MISS` when `prepare_write` fails, so an undersized `cpu_bytes_to_use` makes an FS/NVMe tier look like a cache miss rather than a capacity problem. Cross-check the CPU usage gauge before blaming the storage device.
 4. **Secondary tier I/O consumes scheduler-process CPU.** The threads live in the scheduler process, so thread counts and I/O stalls compete with scheduling work, not with model execution.
 5. **Without a fixed `PYTHONHASHSEED`, cross-instance FS sharing silently yields 0% hits.**
@@ -340,3 +355,5 @@ Metrics that report on this path, and where they come from:
 ## Provenance
 
 Direct source reading of `vllm-project/vllm` at `4ee9702bee668a447e9983a6aefc16ebbc3ad32e` (local checkout, verified present on `upstream/main`), 2026-08-01. Supersedes the promotion/lookup section of [[vLLM KV block prefetch architecture]], which described `HIT_PENDING` and `RETRY` inaccurately and attributed secondary→CPU transfers to the worker process.
+
+Re-verified 2026-08-08 against a local checkout at `0601850` (upstream/main): architecture, state machines, and all line anchors cited above are unchanged; the §1/§2/§6 additions were read directly from `0601850`.
