@@ -431,48 +431,61 @@ def _try_promote(self, key, req_context, exclude_tier_idx=None):
 def prefetch(self, keys, req_context) -> int:
     initiated = 0
     for key in keys:
-        self._metrics.on_prefetch_attempted(...)   # see note below on labeling
         promoted, tier_idx = self._try_promote(key, req_context)
+
+        # Every key passed to prefetch() is an attempt, labeled with the
+        # aggregate prefetch label (we don't know the tier until _try_promote
+        # returns, and absent blocks have no tier at all).
+        self._metrics.on_prefetch_attempted(PREFETCH_TIER_LABEL)
+
         if promoted:
             initiated += 1
+            # Promotion succeeded on a specific secondary tier.
             self._metrics.on_prefetch_promoted(self._metrics.tier_label(tier_idx))
         elif tier_idx is not None:
-            # was in a secondary tier but primary was full
+            # Block was in a secondary tier but primary was full.
             self._metrics.on_prefetch_skipped(self._metrics.tier_label(tier_idx))
         else:
-            # not in any secondary tier
-            self._metrics.on_prefetch_skipped(...)
+            # Block was not in any secondary tier.
+            self._metrics.on_prefetch_skipped(PREFETCH_TIER_LABEL)
     return initiated
 ```
 
-**Labeling note for `PREFETCH_ATTEMPTED` and the "not in any tier" skip:** the block was scanned across all secondary tiers, so there is no single tier to label. Two options:
-
-- Label `PREFETCH_ATTEMPTED` with the primary tier label (`PRIMARY_TIER_LABEL`) or a synthetic `"prefetch"` label — it's a count of attempts, not tier-specific work.
-- Label the "not in any tier" skip with the same synthetic label.
-
-The simplest choice: label `PREFETCH_ATTEMPTED` and the "not-in-any-tier" skip with a constant `"prefetch"` label, and label `PREFETCH_PROMOTED` and the "primary-full" skip with the actual `tier_label(i)`. This keeps the per-tier counters (`PROMOTED`, primary-full `SKIPPED`) meaningful for per-tier diagnosis while the attempt count and absent-block skip are aggregate.
-
-#### 4e — Log a per-step summary
-
-**File:** `vllm/v1/kv_offload/tiering/manager.py`, in `on_schedule_end()`.
-
-Add a debug log after `_flush_pending_promotions()` so the model log shows the toy is active. The deployment checklist in [[Experiment Methodology]] requires a complete model log; a one-line per-step summary makes the prefetch activity auditable without grepping Prometheus:
+`PREFETCH_TIER_LABEL` is a constant defined in `vllm/v1/kv_offload/tiering/metrics.py` next to the existing `PRIMARY_TIER_LABEL`, and imported into `manager.py`:
 
 ```python
-def on_schedule_end(self, context: ScheduleEndContext) -> None:
-    ...
-    self._flush_pending_promotions()
-    if self._prefetch_chunks > 0:
-        logger.debug(
-            "prefetch_chunks=%d: %d attempts, %d promoted, %d skipped this step",
-            self._prefetch_chunks,
-            <attempted_this_step>, <promoted_this_step>, <skipped_this_step>,
-        )
-    for tier in self.secondary_tiers:
-        tier.on_schedule_end(context)
+# vllm/v1/kv_offload/tiering/metrics.py
+PRIMARY_TIER_LABEL: TierLabel = ("0:primary",)
+PREFETCH_TIER_LABEL: TierLabel = ("prefetch",)   # NEW
+
+# vllm/v1/kv_offload/tiering/manager.py (top of file, extending existing import)
+from vllm.v1.kv_offload.tiering.metrics import (
+    PREFETCH_TIER_LABEL,
+    TieringMetricsTracker,
+)
 ```
 
-This requires `prefetch()` to accumulate per-step counters (or the tracker to expose a `take_step_stats()` that resets per step). The simplest approach: have `prefetch()` return a small `(attempted, promoted, skipped)` tuple and accumulate it in a step-local variable in the connector scheduler, then log it from `build_connector_meta()`. Use `logger.debug` (not `info`) to avoid log spam at 32-way concurrency.
+**Labeling rationale:** `PREFETCH_ATTEMPTED` and the "not-in-any-tier" skip are labeled with the aggregate `PREFETCH_TIER_LABEL` (the block was scanned across all secondary tiers, so there is no single tier to attribute the attempt to). `PREFETCH_PROMOTED` and the "primary-full" skip are labeled with the actual `tier_label(i)` — the specific tier where the promotion was attempted. This keeps the per-tier counters (`PROMOTED`, primary-full `SKIPPED`) meaningful for per-tier diagnosis while the attempt count and absent-block skip are aggregate. The invariant `ATTEMPTED = PROMOTED + SKIPPED{tier} + SKIPPED{prefetch}` holds, so no counts are lost.
+
+#### 4e — Log at startup that prefetch is active
+
+**File:** `vllm/v1/kv_offload/tiering/manager.py`, in `TieringOffloadingManager.__init__`.
+
+A single `logger.info` at construction confirms the knob took effect, without the per-step accumulators and debug log that would otherwise be needed. The per-step measurement comes from the Prometheus counters (4a–4d), which is where time-series data belongs for a benchmarking sweep:
+
+```python
+class TieringOffloadingManager(OffloadingManager):
+    def __init__(self, primary_tier, secondary_tiers=None, prefetch_chunks: int = 0):
+        ...
+        self._prefetch_chunks = prefetch_chunks
+        if self._prefetch_chunks > 0:
+            logger.info(
+                "Phase 1 toy prefetch enabled: prefetch_chunks=%d",
+                self._prefetch_chunks,
+            )
+```
+
+No per-step logging, no standalone accumulators on the manager. The startup line is sufficient to confirm the feature is active in the model log (the deployment checklist in [[Experiment Methodology]] requires a complete log; this satisfies "is prefetch on?" without per-step spam at 32-way concurrency). If prefetch stops firing mid-run (e.g., after a cache reset), that's visible in Prometheus as the counter rate dropping to zero — which is the right place to look for time-series behavior, not the log.
 
 #### Why three counters, not one
 
