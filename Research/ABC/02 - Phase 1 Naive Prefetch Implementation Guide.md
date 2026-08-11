@@ -300,13 +300,193 @@ Why this placement is correct:
 
 > **Sliding-window groups:** `_sliding_window_lookup` (`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`) scans from the end and has different semantics. Do **not** add the prefetch hook there in Phase 1 — restrict the toy to full-attention groups (`_maximal_prefix_lookup`). Sliding-window read-ahead needs its own analysis and belongs in Phase 2.
 
-### Step 4 — Add a prefetch counter metric
+### Step 4 — Add prefetch counter metrics
 
-**File:** `vllm/v1/kv_offload/tiering/base.py` (metric name) and `vllm/v1/kv_offload/tiering/metrics.py` (tracker), mirroring the existing `PROMOTION_ALLOCATION_FAILURES` pattern.
+This step adds the **only** record of prefetch activity, since `_try_promote` deliberately does not call `self._metrics.on_lookup()` (see Step 2's "Why `lookup()` stays unchanged"). Without these counters, the sweep cannot distinguish "prefetch is working but not helping" from "prefetch is not firing at all." Three files are touched, each mirroring an existing pattern.
 
-Add a counter `vllm:kv_offload_tiering_prefetch_chunks` labeled by tier, incremented in `prefetch()` for each promotion actually initiated. This lets the run report distinguish "prefetch attempted" from "prefetch succeeded" (the latter already covered by `READ_BYTES` / `BLOCK_HITS`).
+#### 4a — Register the metric names
 
-Also log a one-line summary per step when `prefetch_chunks > 0` so the model log shows the toy is active (the deployment checklist in [[Experiment Methodology]] requires a complete model log).
+**File:** `vllm/v1/kv_offload/tiering/base.py`, in `class TieringOffloadingMetrics`.
+
+Add three counter names next to the existing `PROMOTION_ALLOCATION_FAILURES`:
+
+```python
+class TieringOffloadingMetrics:
+    # ... existing names ...
+    PROMOTION_ALLOCATION_FAILURES = (
+        "vllm:kv_offload_tiering_promotion_allocation_failures"
+    )
+    # NEW — Phase 1 prefetch counters
+    PREFETCH_ATTEMPTED = "vllm:kv_offload_tiering_prefetch_attempted"
+    PREFETCH_PROMOTED = "vllm:kv_offload_tiering_prefetch_promoted"
+    PREFETCH_SKIPPED = "vllm:kv_offload_tiering_prefetch_skipped"
+```
+
+Three counters, not one, because the sweep needs to separate three outcomes:
+
+| Counter | When incremented | Answers |
+|---|---|---|
+| `PREFETCH_ATTEMPTED` | once per key passed to `prefetch()` | "how many blocks did we try to read-ahead?" |
+| `PREFETCH_PROMOTED` | per key where `_try_promote` started a promotion (secondary `HIT` + `_initiate_promotion` succeeded) | "how many read-aheads actually moved data?" |
+| `PREFETCH_SKIPPED` | per key where `_try_promote` returned `False` (not in any secondary tier, or primary full) | "how much read-ahead was wasted?" |
+
+The split matters for diagnosing the U-curve's right side: if latency regresses at large N, `PREFETCH_SKIPPED` rising indicates primary-tier pressure (promotions failing on `prepare_write`), while `PREFETCH_PROMOTED` high + latency still regressing indicates eviction churn (promotions succeeded but the blocks were evicted before use — a capacity problem, not a promotion problem).
+
+#### 4b — Declare the metric definitions
+
+**File:** `vllm/v1/kv_offload/tiering/spec.py`, in `TieringOffloadingSpec.build_metric_definitions()`.
+
+Add the three counters to the `metrics` dict, labeled by tier, mirroring the existing `PROMOTION_ALLOCATION_FAILURES` declaration:
+
+```python
+metrics[TieringOffloadingMetrics.PREFETCH_ATTEMPTED] = OffloadingCounterMetadata(
+    documentation=(
+        "Number of KV cache chunks passed to prefetch() for proactive "
+        "promotion, labeled by tier. Phase 1 toy read-ahead."
+    ),
+    labelnames=("tier",),
+)
+metrics[TieringOffloadingMetrics.PREFETCH_PROMOTED] = OffloadingCounterMetadata(
+    documentation=(
+        "Number of prefetch chunks that initiated a secondary->primary "
+        "promotion, labeled by tier. Subset of PREFETCH_ATTEMPTED."
+    ),
+    labelnames=("tier",),
+)
+metrics[TieringOffloadingMetrics.PREFETCH_SKIPPED] = OffloadingCounterMetadata(
+    documentation=(
+        "Number of prefetch chunks skipped (not in any secondary tier, or "
+        "primary tier full), labeled by tier. Subset of PREFETCH_ATTEMPTED."
+    ),
+    labelnames=("tier",),
+)
+```
+
+`build_metric_definitions()` runs at spec creation; it declares the Prometheus metric so the server exports it. The existing `PROMOTION_ALLOCATION_FAILURES` entry (unlabeled) is the closest pattern; the `READ_BYTES` / `BLOCK_HITS` entries (labeled by tier) show the `labelnames=("tier",)` form.
+
+#### 4c — Record the counters in the tracker
+
+**File:** `vllm/v1/kv_offload/tiering/metrics.py`, in `class TieringMetricsTracker`.
+
+Add a method that `prefetch()` will call, mirroring the existing `on_promotion_allocation_failure()`:
+
+```python
+# existing pattern:
+def on_promotion_allocation_failure(self) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PROMOTION_ALLOCATION_FAILURES
+    )
+
+# NEW:
+def on_prefetch_attempted(self, tier_label: TierLabel) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PREFETCH_ATTEMPTED, labelvalues=tier_label
+    )
+
+def on_prefetch_promoted(self, tier_label: TierLabel) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PREFETCH_PROMOTED, labelvalues=tier_label
+    )
+
+def on_prefetch_skipped(self, tier_label: TierLabel) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PREFETCH_SKIPPED, labelvalues=tier_label
+    )
+```
+
+The `tier_label` comes from `self._metrics.tier_label(i)` — the same helper already used in `lookup()` for the demand-path metrics. For prefetch, the label is the tier where the promotion was attempted (or the first tier scanned, for skipped blocks that were in no tier).
+
+#### 4d — Call the tracker from `prefetch()`
+
+**File:** `vllm/v1/kv_offload/tiering/manager.py`, in the `prefetch()` method added in Step 2.
+
+Update `prefetch()` to record the three outcomes. This requires `_try_promote` to return *why* it returned `False` (not in any tier vs. primary full), so it returns a small enum or string instead of a bare bool:
+
+```python
+def _try_promote(self, key, req_context, exclude_tier_idx=None):
+    """Returns (promoted: bool, tier_idx: int | None).
+
+    tier_idx is the secondary tier the promotion was attempted on (for
+    metrics labeling), or None if the block was not in any tier.
+    """
+    primary_hit = self.primary_tier.lookup(key, req_context)
+    if primary_hit in (LookupResult.HIT, LookupResult.HIT_PENDING):
+        return True, None                      # already primary-resident (not counted)
+    for i, tier in enumerate(self.secondary_tiers):
+        if i == exclude_tier_idx:
+            continue
+        if not req_context.load_tier_filter.allows(tier.medium, tier.locality):
+            continue
+        result = tier.lookup(key, req_context)
+        if result is LookupResult.HIT:
+            promoted = self._initiate_promotion(i, key, req_context)
+            return promoted, i                 # promoted=True/False, tier=i
+    return False, None                         # not in any tier
+
+def prefetch(self, keys, req_context) -> int:
+    initiated = 0
+    for key in keys:
+        self._metrics.on_prefetch_attempted(...)   # see note below on labeling
+        promoted, tier_idx = self._try_promote(key, req_context)
+        if promoted:
+            initiated += 1
+            self._metrics.on_prefetch_promoted(self._metrics.tier_label(tier_idx))
+        elif tier_idx is not None:
+            # was in a secondary tier but primary was full
+            self._metrics.on_prefetch_skipped(self._metrics.tier_label(tier_idx))
+        else:
+            # not in any secondary tier
+            self._metrics.on_prefetch_skipped(...)
+    return initiated
+```
+
+**Labeling note for `PREFETCH_ATTEMPTED` and the "not in any tier" skip:** the block was scanned across all secondary tiers, so there is no single tier to label. Two options:
+- Label `PREFETCH_ATTEMPTED` with the primary tier label (`PRIMARY_TIER_LABEL`) or a synthetic `"prefetch"` label — it's a count of attempts, not tier-specific work.
+- Label the "not in any tier" skip with the same synthetic label.
+
+The simplest choice: label `PREFETCH_ATTEMPTED` and the "not-in-any-tier" skip with a constant `"prefetch"` label, and label `PREFETCH_PROMOTED` and the "primary-full" skip with the actual `tier_label(i)`. This keeps the per-tier counters (`PROMOTED`, primary-full `SKIPPED`) meaningful for per-tier diagnosis while the attempt count and absent-block skip are aggregate.
+
+#### 4e — Log a per-step summary
+
+**File:** `vllm/v1/kv_offload/tiering/manager.py`, in `on_schedule_end()`.
+
+Add a debug log after `_flush_pending_promotions()` so the model log shows the toy is active. The deployment checklist in [[Experiment Methodology]] requires a complete model log; a one-line per-step summary makes the prefetch activity auditable without grepping Prometheus:
+
+```python
+def on_schedule_end(self, context: ScheduleEndContext) -> None:
+    ...
+    self._flush_pending_promotions()
+    if self._prefetch_chunks > 0:
+        logger.debug(
+            "prefetch_chunks=%d: %d attempts, %d promoted, %d skipped this step",
+            self._prefetch_chunks,
+            <attempted_this_step>, <promoted_this_step>, <skipped_this_step>,
+        )
+    for tier in self.secondary_tiers:
+        tier.on_schedule_end(context)
+```
+
+This requires `prefetch()` to accumulate per-step counters (or the tracker to expose a `take_step_stats()` that resets per step). The simplest approach: have `prefetch()` return a small `(attempted, promoted, skipped)` tuple and accumulate it in a step-local variable in the connector scheduler, then log it from `build_connector_meta()`. Use `logger.debug` (not `info`) to avoid log spam at 32-way concurrency.
+
+#### Why three counters, not one
+
+The single-counter version ("increment `PREFETCH_CHUNKS` per promotion") cannot distinguish the two failure modes that the U-curve's right side must diagnose:
+
+- **Primary-full skips** (`PREFETCH_SKIPPED` with a real tier label): the block *was* in secondary but the CPU tier had no room. This is the capacity pressure the sweep is measuring. Rising `PREFETCH_SKIPPED` + rising `PROMOTION_ALLOCATION_FAILURES` = the CPU tier is the bottleneck.
+- **Absent-block skips** (`PREFETCH_SKIPPED` with the synthetic label): the block was never offloaded to any tier. This is expected for a fraction of the prefix (the per-turn delta) and is not a problem — it just means read-ahead reached the end of the offloaded region.
+
+Without the split, a rising `PREFETCH_SKIPPED` total is ambiguous: is the toy wasting work on absent blocks (fine) or choking on primary pressure (the signal to back off N)? The three-counter split resolves this.
+
+#### Relationship to existing metrics
+
+| Existing metric | Counts prefetch activity? | Why |
+|---|---|---|
+| `BLOCK_QUERIES` / `BLOCK_HITS` | **No** | `_try_promote` doesn't call `on_lookup()`, so prefetch lookups are excluded. This is deliberate (Step 2) — keeps the demand-lookup signal clean. |
+| `READ_BYTES` / `READ_TIME` | **Yes** | Prefetch promotions complete via the same `_complete_promotion` path as demand promotions, so their bytes/time are counted. This means `READ_BYTES` rises with N (more data moved), which is expected and correct. |
+| `PROMOTION_ALLOCATION_FAILURES` | **Yes** | `_initiate_promotion` calls `on_promotion_allocation_failure()` on primary-full, for both demand and prefetch paths. So this metric rises with N when the CPU tier is pressured — use it alongside `PREFETCH_SKIPPED` to confirm the cause. |
+| `ACTIVE_PROMOTION_JOBS` | **Yes** | Prefetch promotions register jobs via `_register_job`, so they appear in the active-job gauge. Expect this to rise with N. |
+
+So the prefetch-specific counters (`PREFETCH_ATTEMPTED` / `PROMOTED` / `SKIPPED`) are the **only** way to isolate prefetch activity from demand activity. The existing metrics either exclude it (`BLOCK_QUERIES`) or conflate it with demand (`READ_BYTES`, `PROMOTION_ALLOCATION_FAILURES`). This is why Step 4 is load-bearing for the analysis, not just nice-to-have.
 
 ### Step 5 — Guardrails (keep the toy safe)
 
