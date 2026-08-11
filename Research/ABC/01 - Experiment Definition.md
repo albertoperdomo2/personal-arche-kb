@@ -74,13 +74,51 @@ The progression is deliberately from "prove prefetching helps at all" to "predic
 3. **Phase 2 — Heuristic prefetching.** Replace the fixed-$N$ rule with a developed, rule-based prefetch heuristic.
 4. **Phase 3 — Speculative prefetching (end goal).** Replace the heuristic with ML-driven temperature prediction and the full cost-aware placement framework.
 
-```mermaid
-flowchart LR
-    P0["Phase 0\nBaseline (reactive)"] --> P1["Phase 1\nNaive prefetch N blocks"]
-    P1 --> P2["Phase 2\nHeuristic prefetch"]
-    P2 --> P3["Phase 3\nSpeculative / ML-driven prefetch"]
-    P3 --> END["End state\nActivity-based 4-tier framework"]
+The figure below shows the four-phase progression from the reactive baseline to the end-state framework.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 1 — ABC phase progression",
+  "width": 700,
+  "height": 120,
+  "background": "white",
+  "data": {
+    "values": [
+      {"phase": "Phase 0 — Baseline (reactive)", "order": 0},
+      {"phase": "Phase 1 — Naive prefetch N blocks", "order": 1},
+      {"phase": "Phase 2 — Heuristic prefetch", "order": 2},
+      {"phase": "Phase 3 — Speculative / ML-driven", "order": 3},
+      {"phase": "End state — 4-tier framework", "order": 4}
+    ]
+  },
+  "layer": [
+    {
+      "mark": {"type": "line", "point": true, "strokeWidth": 2},
+      "encoding": {
+        "x": {
+          "field": "order",
+          "type": "ordinal",
+          "title": "Phase",
+          "axis": {"labelAngle": -20, "labelLimit": 200}
+        },
+        "y": {"field": "order", "type": "quantitative", "title": null, "axis": null},
+        "tooltip": [{"field": "phase"}]
+      }
+    },
+    {
+      "mark": {"type": "text", "dy": -12, "fontSize": 11},
+      "encoding": {
+        "x": {"field": "order", "type": "ordinal"},
+        "y": {"field": "order", "type": "quantitative"},
+        "text": {"field": "phase"}
+      }
+    }
+  ]
+}
 ```
+
+Each phase is sequential: a later phase depends on the latency/reuse signal validated by the previous one.
 
 ### Phase 0 — Baseline characterization (reactive fetching)
 
