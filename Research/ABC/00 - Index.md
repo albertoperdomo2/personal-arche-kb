@@ -10,8 +10,9 @@ status: "active"
 
 ## Reports
 
+- [[2026-08-11 - ABC Nemotron four-tier KV lookup comparison - Revision 1|2026-08-11 — Four-tier KV lookup comparison — Revision 1]]
 - [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report|2026-08-10 — Nemotron no-offload versus CPU-offload KV lookup report]]
 
 ## Current conclusion
 
-The CPU run exposes synchronous KV lookup P99 at roughly 30–33 ms late in the run. External secondary-tier async lookup telemetry is not populated in either run. The comparison is conditional because the vLLM images differ (`v0.26.0` versus `nightly`).
+The added CephFS and NVMe runs expose tiering async lookup telemetry. Both show multi-second lookup delays and P99 values reaching the 10-second histogram ceiling; overflow is unavailable, so tail values are lower bounds. The comparison remains conditional because runtime images and storage thread settings differ.
