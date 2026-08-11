@@ -8,6 +8,7 @@ phase: "1 — naive proactive prefetching (toy)"
 status: "draft"
 depends-on: "[[01 - Experiment Definition]] (Phase 1)"
 baseline: "[[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]"
+workload: "semianalysisai/cc-traces-weka-061526"
 codebase: "vllm-project/vllm @ main (inspected 2026-08-11)"
 ---
 
@@ -293,6 +294,34 @@ Also log a one-line summary per step when `prefetch_chunks > 0` so the model log
 
 Reuse the existing tiering telemetry — no new instrumentation is required to evaluate the toy, beyond the Step 4 counter.
 
+### 4.0 Workload — Weka traces `cc-traces-weka-061526`
+
+The Phase 1 sweep uses the SemiAnalysis Weka trace corpus `semianalysisai/cc-traces-weka-061526` (HuggingFace, public), loaded via the AIPerf loader plugin `--public-dataset semianalysis_cc_traces_weka_with_subagents`. This is the same agentic-replay workload family documented in [[AgentX Workload Definition]], built 2026-06-15 with tighter filtering than the earlier `060826` corpus.
+
+Corpus statistics (from the dataset card):
+
+| Field | Value |
+|---|---|
+| Traces | 233 |
+| Main turns | 38,529 |
+| Subagent groups | 787 |
+| Subagent inner requests | 22,467 |
+| Total model requests | 60,996 |
+| Total input tokens (hash-block count × 64) | 12.63 B |
+| Total output tokens | 59.76 M |
+| Block size | 64 tokens |
+| ISL cap | 990,016 tokens (drops KV-block overcount artifacts) |
+| Min requests per session | 20 |
+| Peak concurrent subagent groups | ≤ 10 |
+
+Two structural properties drive the N selection:
+
+1. **Bimodal request-size distribution.** The corpus mixes small subagent inner requests (a few hundred to a few thousand tokens = 6–40 blocks) with large main-turn requests (45k–52k tokens ≈ 700–815 blocks of prefix). The large requests are the ones that stress the secondary tier: their prefixes exceed the 64 GiB CPU tier's residency under 32-way concurrency, so a meaningful fraction is evicted to NVMe/CephFS between turns and must be promoted back on the next turn. The toy's benefit concentrates on these large requests.
+
+2. **High prefix reuse (~93–94%).** Within a play, turns share prefix history; only the delta (new user message + prior assistant output) is novel per turn. So the *secondary fetch length* — the number of chunks a request needs to promote from secondary on a miss — is not the full prefix, but the prefix portion evicted from CPU but still resident in secondary. Under 32-way concurrency and 64 GiB CPU, this evicted fraction is the quantity N must cover.
+
+> **The `in` field is hash-block count × 64, not a true tokenizer count.** The dataset card warns it overcounts the real prompt size by up to ~260k tokens in the heavy-cache-write tail. For KV-cache block accounting this is the *relevant* number (it is the count of 64-token prefix blocks), but it means the 12.63 B / 60,996 ≈ 207k mean `in` overstates the real mean prompt. The per-request prefix-block count from the trace is the right input for sizing N.
+
 ### 4.1 Primary signal (does latency improve?)
 
 From the Nemotron report's metric set, compare across N:
@@ -318,9 +347,84 @@ The decisive comparison is **lookup-event count per request**, not per-event lat
 
 ### 4.3 The N sweep
 
-Run the Phase 0 baseline workload (AgentX MVP, Nemotron, TP8/U0.80/C32 — see [[Experiment Methodology]]) with `prefetch_chunks ∈ {0, 1, 2, 4, 8, 16}`. `0` is the within-batch control. Minimum 3 paired repetitions per cell; report mean ± CI and paired-request tail analysis, per the experiment definition's cross-phase measurement commitments.
+#### Anchoring N to the workload
 
-Plot the latency and lookup-event-count curves against N. The expected shape is a U-curve: too-small N leaves the reactive cost in place; too-large N spends primary-tier capacity and transfer bandwidth on blocks that may be evicted before use. The Phase 1 exit criterion is a **repeatable, attributable** latency improvement at some N > 0 over the N = 0 control.
+The read-ahead knob N is measured in **offload chunks** (one chunk = `blocks_per_chunk` GPU blocks = `blocks_per_chunk × 64` tokens). The token coverage of one read-ahead is:
+
+$$\text{coverage}(N) = N \times \text{blocks\_per\_chunk} \times 64 \text{ tokens}$$
+
+The sweep must span three regimes relative to **K**, the typical number of chunks a large request fetches from the secondary tier on a miss:
+
+| Regime | Condition | Expected outcome |
+|---|---|---|
+| Too small | $N \ll K$ | read-ahead covers a tiny fraction of the secondary fetch; the request is still deferred $\lceil K/N \rceil$ times → little benefit over reactive |
+| Sweet spot | $N \approx K$ | one read-ahead covers the whole secondary fetch in 1–2 deferred steps → large latency reduction |
+| Too large | $N \gg K$ | read-ahead overshoots the fetch, spending CPU-tier capacity and transfer bandwidth on blocks the request will not reach before they are evicted under 32-way concurrency → regression |
+
+**Estimating K from the workload.** A large main-turn request carries ~700–815 blocks of prefix (45–52k tokens). Under 32-way concurrency with a 64 GiB CPU tier and ~93% reuse, the fraction evicted from CPU but resident in secondary between turns is the fetch length. The Phase 0 baseline ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured a stall rate of ~587–591 events/s over 1,800 s (~1.06 M lookup events); dividing by the completed-request count yields the empirical K. **Measure K from the Phase 0 run** (`BLOCK_QUERIES` / completed requests, or more precisely, secondary-`HIT` promotions per request) and center the sweep on it. Until that measurement is in, the prefix-size distribution above gives the bracket: K is bounded above by the large-request prefix (~700–815 blocks) and below by the per-turn delta (~7% of prefix ≈ 50–60 blocks).
+
+#### Proposed sweep
+
+`prefetch_chunks ∈ {0, 4, 8, 16, 32, 64, 128, 256}`, with `0` as the within-batch control (reactive baseline). The values are chosen to span the three regimes for the Weka workload:
+
+| N | Token coverage (blocks_per_chunk=1) | Token coverage (blocks_per_chunk=8) | Expected regime |
+|---:|---:|---:|---|
+| 0 | 0 (control) | 0 (control) | reactive baseline |
+| 4 | 256 tok | 2,048 tok | too small — covers <10% of a large fetch |
+| 8 | 512 tok | 4,096 tok | too small — covers <15% of a large fetch |
+| 16 | 1,024 tok | 8,192 tok | transition — covers a small fetch or the per-turn delta |
+| 32 | 2,048 tok | 16,384 tok | approaching sweet spot — covers a moderate fetch |
+| 64 | 4,096 tok | 32,768 tok | expected sweet spot — covers a typical large fetch in 1–2 steps |
+| 128 | 8,192 tok | 65,536 tok | past sweet spot — overshoots, CPU-tier pressure builds |
+| 256 | 16,384 tok | 131,072 tok | too large — 32 concurrent read-aheads compete for 64 GiB CPU → regression |
+
+> **Confirm `blocks_per_chunk`** from the Nemotron run config before the sweep; the token-coverage column shifts with it but the chunk-count sweep is unchanged. If `blocks_per_chunk` is large (e.g. 8), the sweet spot shifts left (smaller N); if it is 1, the sweet spot shifts right. The sweep covers both cases.
+
+#### Expected U-curve
+
+The figure below shows the expected shape: latency (or lookup-events-per-request) as a function of N. The left flat region is the reactive cost surviving; the dip is the sweet spot where read-ahead amortizes the secondary fetch; the right rise is CPU-tier eviction churn and wasted bandwidth.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 2 — Expected U-curve: latency vs. prefetch_chunks (N)",
+  "width": 600,
+  "height": 300,
+  "background": "white",
+  "data": {
+    "values": [
+      {"N": 0,  "latency": 100, "regime": "control"},
+      {"N": 4,  "latency": 98,  "regime": "too small"},
+      {"N": 8,  "latency": 92,  "regime": "too small"},
+      {"N": 16, "latency": 75,  "regime": "transition"},
+      {"N": 32, "latency": 52,  "regime": "sweet spot"},
+      {"N": 64, "latency": 45,  "regime": "sweet spot"},
+      {"N": 128,"latency": 68,  "regime": "too large"},
+      {"N": 256,"latency": 95,  "regime": "too large"}
+    ]
+  },
+  "layer": [
+    {
+      "mark": {"type": "line", "point": true, "strokeWidth": 2},
+      "encoding": {
+        "x": {"field": "N", "type": "quantitative", "title": "prefetch_chunks (N)", "scale": {"type": "log", "domain": [1, 256]}},
+        "y": {"field": "latency", "type": "quantitative", "title": "Request latency P50 (normalized, %)", "scale": {"domain": [0, 110]}},
+        "color": {"field": "regime", "type": "nominal", "legend": {"title": "Regime"}}
+      }
+    },
+    {
+      "mark": {"type": "rule", "strokeDash": [4, 4], "color": "gray"},
+      "encoding": {"y": {"datum": 100}}
+    }
+  ]
+}
+```
+
+The dashed line at 100% is the reactive baseline (N = 0). The curve is illustrative — the actual sweet-spot N and depth depend on K, `blocks_per_chunk`, and the CPU-tier eviction dynamics under this workload. The Phase 1 exit criterion is a **repeatable, attributable** latency improvement at some N > 0 over the N = 0 control, with the U-shape visible across the sweep.
+
+#### Measurement protocol
+
+Minimum 3 paired repetitions per cell; report mean ± CI and paired-request tail analysis (pair by `conversation_id` / turn / depth, per [[Experiment Methodology]]). Plot both latency and lookup-events-per-request vs N — the latter should show the same U-shape but inverted (high at small N, dips at the sweet spot, rises again at large N due to evicted-and-refetched churn).
 
 ## 5. Run plan and exit criteria
 
