@@ -187,17 +187,35 @@ Plumb it through:
 
 ### Step 2 — Add a `_try_promote` helper and a `prefetch` method on the manager
 
-**File:** `vllm/v1/kv_offload/tiering/manager.py`.
+**File:** `vllm/v1/kv_offload/tiering/manager.py`, on `class TieringOffloadingManager(OffloadingManager)`.
 
-Factor the "find in a secondary tier and initiate promotion" body of `lookup()` into a reusable helper, then expose a batched `prefetch()`:
+Add a new `_try_promote` helper and a batched `prefetch()` method. These are **separate from `lookup()`** — `lookup()` stays unchanged. The two methods share the promotion primitive (`_initiate_promotion`) and the tier filter check, but have intentionally different semantics (see "Why `lookup()` stays unchanged" below).
 
 ```python
+# EXISTING — unchanged. Demand path. Full four-way semantics + metrics + poll.
+def lookup(self, key, req_context, *, exclude_tier_idx=None) -> LookupResult:
+    self._maybe_process_finished_jobs()
+    primary_hit = self.primary_tier.lookup(key, req_context)
+    self._metrics.on_lookup(...)                          # metrics
+    if primary_hit is LookupResult.HIT: return LookupResult.HIT
+    if primary_hit is LookupResult.HIT_PENDING: return LookupResult.HIT_PENDING
+    any_retry = False
+    for i, tier in enumerate(self.secondary_tiers):
+        ...
+        result = tier.lookup(key, req_context)
+        self._metrics.on_lookup(...)                      # metrics
+        if result is LookupResult.HIT:
+            promoted = self._initiate_promotion(i, key, req_context)
+            return LookupResult.MISS if not promoted else LookupResult.RETRY
+        if result is LookupResult.RETRY: any_retry = True   # retry tracking
+    return LookupResult.RETRY if any_retry else LookupResult.MISS
+
+# NEW — proactive path. Bool semantics only. Called by prefetch().
 def _try_promote(self, key, req_context, exclude_tier_idx=None) -> bool:
     """Return True if a promotion was initiated (or already in-flight/hit).
 
-    Mirrors the secondary-scan body of lookup(): primary HIT/HIT_PENDING and
-    already-in-flight promotions are no-ops; the first secondary HIT initiates
-    a promotion; secondary RETRY/MISS returns False.
+    Shares _initiate_promotion and the tier filter with lookup(), but omits
+    metrics, job polling, and any_retry tracking — see the note below.
     """
     primary_hit = self.primary_tier.lookup(key, req_context)
     if primary_hit in (LookupResult.HIT, LookupResult.HIT_PENDING):
@@ -212,6 +230,7 @@ def _try_promote(self, key, req_context, exclude_tier_idx=None) -> bool:
             return self._initiate_promotion(i, key, req_context)
     return False
 
+# NEW — batched wrapper, called by the connector scheduler.
 def prefetch(self, keys, req_context) -> int:
     """Proactively promote up to len(keys) chunks that are in a secondary tier.
 
@@ -227,12 +246,22 @@ def prefetch(self, keys, req_context) -> int:
     return initiated
 ```
 
-Notes:
+#### Why `lookup()` stays unchanged
 
-- `_try_promote` is a pure refactor of the secondary-scan branch of `lookup()`; `lookup()` itself should be rewritten to call `_try_promote` for the single-key case so the two paths cannot drift. Keep `lookup()`'s return-type semantics (`HIT` / `HIT_PENDING` / `RETRY` / `MISS`) identical — callers depend on them.
+`lookup()` does three things `_try_promote` deliberately omits:
+
+1. **Polls finished jobs first** (`self._maybe_process_finished_jobs()`): so completed promotions are reflected as `HIT` before the scan. The prefetch path doesn't need this — the poll already ran in the `lookup()` call that triggered the prefetch, earlier in the same step.
+2. **Records per-tier metrics** (`self._metrics.on_lookup(...)`): for primary, for each secondary `HIT`, and for each secondary non-hit. The prefetch path intentionally omits these so prefetched blocks' secondary lookups are **not counted** in `BLOCK_QUERIES` / `BLOCK_HITS` — this keeps the "lookup events per request" signal (Section 4.1) measuring only demand-driven lookups, so the sweep shows the demand-lookup count dropping as N grows. If prefetch lookups were also counted, the metric would conflate "fewer demand lookups" with "more prefetch lookups" and the U-curve signal would be muddied.
+3. **Tracks `any_retry` across all secondary tiers**: if tier 0 returns `RETRY` and tier 1 returns `MISS`, `lookup()` returns `RETRY` — the block *might* be in tier 0 once its async lookup resolves. `_try_promote` just returns `False` on the first non-hit. This is fine for prefetch: it doesn't need to defer anything, doesn't feed a scheduling decision, and a block that's not yet confirmed in any tier is simply skipped (it may be promoted on a later step's prefetch or by the demand path).
+
+The two methods share `_initiate_promotion()` (the actual promotion primitive — single implementation) and the `load_tier_filter.allows(...)` check, so the promotion behavior cannot drift. The differences above are intentional, not drift.
+
+#### Other notes
+
 - The helper **respects `load_tier_filter`** exactly as `lookup()` does, so per-request tier restrictions (e.g. `kv_load_tiers` in `kv_transfer_params`) are honored by prefetch too.
 - It **tolerates primary-full**: `_initiate_promotion` returns `False` when `primary_tier.prepare_write()` returns `None`; `prefetch` just skips that key. No exception, no deadlock.
 - It **does not double-promote**: a block already in-flight (`HIT_PENDING`, `ref_cnt = -1`) returns `True` without calling `prepare_write` again, so it never allocates a second primary slot for the same key.
+- Because `_try_promote` does not record metrics, the `prefetch_chunks` counter (Step 4) is the **only** record of prefetch activity — it is load-bearing for the analysis, not just nice-to-have.
 
 ### Step 3 — Call `prefetch` from the connector scheduler on the first miss
 
