@@ -32,9 +32,9 @@ Understanding the reactive path is the whole prerequisite, because the toy reuse
 
 ### 1.1 The per-request sequential scan
 
-When the scheduler considers a request, it calls `OffloadingConnectorScheduler.get_num_new_matched_tokens()` (scheduler.py). That builds the request's full list of `offload_keys` from `req.block_hashes` (`RequestOffloadState.update_offload_keys`) and then calls `_lookup()` → `_lookup_complete_chunks()` → `_maximal_prefix_lookup()`.
+When the scheduler considers a request, it calls `OffloadingConnectorScheduler.get_num_new_matched_tokens()` (`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`). That builds the request's full list of `offload_keys` from `req.block_hashes` (`RequestOffloadState.update_offload_keys`) and then calls `_lookup()` → `_lookup_complete_chunks()` → `_maximal_prefix_lookup()`.
 
-`_maximal_prefix_lookup` (scheduler.py) is the heart of the reactive behavior:
+`_maximal_prefix_lookup` (`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`) is the heart of the reactive behavior:
 
 ```python
 def _maximal_prefix_lookup(self, keys, req_context, req, group_config, start_chunk_idx):
@@ -57,7 +57,7 @@ Two properties matter:
 
 ### 1.2 What `lookup()` does on a primary miss
 
-`TieringOffloadingManager.lookup()` (manager.py) checks the CPU primary tier first. On a primary MISS it walks the secondary tiers; on the first secondary HIT it calls `_initiate_promotion()`:
+`TieringOffloadingManager.lookup()` (`vllm/v1/kv_offload/tiering/manager.py`) checks the CPU primary tier first. On a primary MISS it walks the secondary tiers; on the first secondary HIT it calls `_initiate_promotion()`:
 
 ```python
 def _initiate_promotion(self, tier_idx, key, req_context) -> bool:
@@ -79,7 +79,7 @@ Then `lookup()` returns `RETRY`, which makes `_maximal_prefix_lookup` set `defer
 
 ### 1.3 The promotion is flushed at end of step
 
-At the end of each scheduler step, `build_connector_meta()` (scheduler.py) calls `manager.on_schedule_end()` (manager.py), which calls `_flush_pending_promotions()`:
+At the end of each scheduler step, `build_connector_meta()` (`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`) calls `manager.on_schedule_end()` (`vllm/v1/kv_offload/tiering/manager.py`), which calls `_flush_pending_promotions()`:
 
 ```python
 def _flush_pending_promotions(self):
@@ -173,14 +173,14 @@ The change touches three files. Each step is independently testable.
 
 **File:** `vllm/v1/kv_offload/tiering/spec.py` (and the config plumbing).
 
-`TieringOffloadingSpec` reads its behavior from `kv_connector_extra_config` (see the docstring at the top of `spec.py`). Add a new key:
+`TieringOffloadingSpec` reads its behavior from `kv_connector_extra_config` (see the docstring at the top of `vllm/v1/kv_offload/tiering/spec.py`). Add a new key:
 
 - `prefetch_chunks` (int, default `0`): number of additional chunks to proactively promote on the first secondary-tier miss. `0` reproduces the reactive baseline exactly — this is the control value for the sweep.
 
 Plumb it through:
 
 1. Read it in `TieringOffloadingSpec.__init__` from `self.extra_config.get("prefetch_chunks", 0)`, validate it is a non-negative int, and store as `self.prefetch_chunks`.
-2. Pass it into the `TieringOffloadingManager` constructor (`spec.py`, `get_manager()`), and store as `self._prefetch_chunks` on the manager.
+2. Pass it into the `TieringOffloadingManager` constructor (`vllm/v1/kv_offload/tiering/spec.py`, `get_manager()`), and store as `self._prefetch_chunks` on the manager.
 3. Expose it on the manager as a read-only property so the connector scheduler can read it without a second plumbing path: `manager.prefetch_chunks`.
 
 > **Why default 0:** the experiment is a comparison against the Phase 0 baseline. `N = 0` must be byte-for-byte the existing behavior so the sweep has a clean control. Confirm this with a paired `N = 0` run in the batch.
@@ -269,11 +269,11 @@ Why this placement is correct:
 - It runs **before** `on_schedule_end()`, so the prefetched promotions land in `_pending_load_submissions` and are flushed in the **same** `_flush_pending_promotions()` batch as the demand promotion — one batched `submit_load()` per (tier, request), exactly as today.
 - `getattr(..., "prefetch_chunks", 0)` keeps the scheduler robust if a non-tiering manager (e.g. `CPUOffloadingSpec`) is in use — it falls back to `0`, i.e. the reactive baseline.
 
-> **Sliding-window groups:** `_sliding_window_lookup` (scheduler.py) scans from the end and has different semantics. Do **not** add the prefetch hook there in Phase 1 — restrict the toy to full-attention groups (`_maximal_prefix_lookup`). Sliding-window read-ahead needs its own analysis and belongs in Phase 2.
+> **Sliding-window groups:** `_sliding_window_lookup` (`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`) scans from the end and has different semantics. Do **not** add the prefetch hook there in Phase 1 — restrict the toy to full-attention groups (`_maximal_prefix_lookup`). Sliding-window read-ahead needs its own analysis and belongs in Phase 2.
 
 ### Step 4 — Add a prefetch counter metric
 
-**File:** `vllm/v1/kv_offload/tiering/base.py` (metric name) and `metrics.py` (tracker), mirroring the existing `PROMOTION_ALLOCATION_FAILURES` pattern.
+**File:** `vllm/v1/kv_offload/tiering/base.py` (metric name) and `vllm/v1/kv_offload/tiering/metrics.py` (tracker), mirroring the existing `PROMOTION_ALLOCATION_FAILURES` pattern.
 
 Add a counter `vllm:kv_offload_tiering_prefetch_chunks` labeled by tier, incremented in `prefetch()` for each promotion actually initiated. This lets the run report distinguish "prefetch attempted" from "prefetch succeeded" (the latter already covered by `READ_BYTES` / `BLOCK_HITS`).
 
@@ -287,7 +287,7 @@ Also log a one-line summary per step when `prefetch_chunks > 0` so the model log
 | No wasted promotion on absent blocks | `_try_promote` only promotes blocks that are secondary-`HIT`; blocks in no tier are skipped. |
 | No double promotion | `HIT_PENDING` short-circuits without allocating. |
 | Honors per-request tier filter | `_try_promote` checks `load_tier_filter.allows(...)`. |
-| Bounded N | Validate `prefetch_chunks` ≤ a sane cap (e.g. 256) in `spec.py` to avoid a single miss triggering a multi-thousand-chunk burst. The sweep tops out at 256; the cap should not be the binding constraint in the experiment. |
+| Bounded N | Validate `prefetch_chunks` ≤ a sane cap (e.g. 256) in `vllm/v1/kv_offload/tiering/spec.py` to avoid a single miss triggering a multi-thousand-chunk burst. The sweep tops out at 256; the cap should not be the binding constraint in the experiment. |
 | Reversible | `N = 0` is the baseline; the whole feature is gated on `prefetch_chunks > 0`. |
 
 ## 4. Telemetry and measurement
