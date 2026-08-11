@@ -24,11 +24,13 @@ It is the implementation counterpart of **Phase 1** in [[01 - Experiment Definit
 
 Understanding the reactive path is the whole prerequisite, because the toy reuses its machinery. The path spans three files:
 
-| Layer | File | Class / function |
-|---|---|---|
-| Connector (scheduler side) | `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | `OffloadingConnectorScheduler` |
-| Tiering manager (scheduler side) | `vllm/v1/kv_offload/tiering/manager.py` | `TieringOffloadingManager` |
-| Secondary tier interface | `vllm/v1/kv_offload/tiering/base.py` | `SecondaryTierManager` |
+
+| Layer                            | File                                                                   | Class / function               |
+| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------ |
+| Connector (scheduler side)       | `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | `OffloadingConnectorScheduler` |
+| Tiering manager (scheduler side) | `vllm/v1/kv_offload/tiering/manager.py`                                | `TieringOffloadingManager`     |
+| Secondary tier interface         | `vllm/v1/kv_offload/tiering/base.py`                                   | `SecondaryTierManager`         |
+
 
 ### 1.1 The per-request sequential scan
 
@@ -161,6 +163,7 @@ The call-flow today and after the change:
     }
   ]
 }
+
 ```
 
 The figure contrasts the two flows: reactive promotes one chunk per deferred step; the toy promotes N, so each subsequent re-scan advances N chunks instead of one.
@@ -189,7 +192,7 @@ Plumb it through:
 
 **File:** `vllm/v1/kv_offload/tiering/manager.py`, on `class TieringOffloadingManager(OffloadingManager)`.
 
-Add a new `_try_promote` helper and a batched `prefetch()` method. These are **separate from `lookup()`** — `lookup()` stays unchanged. The two methods share the promotion primitive (`_initiate_promotion`) and the tier filter check, but have intentionally different semantics (see "Why `lookup()` stays unchanged" below).
+Add a new `_try_promote` helper and a batched `prefetch()` method. These are **separate from `lookup()**` — `lookup()` stays unchanged. The two methods share the promotion primitive (`_initiate_promotion`) and the tier filter check, but have intentionally different semantics (see "Why `lookup()` stays unchanged" below).
 
 ```python
 # EXISTING — unchanged. Demand path. Full four-way semantics + metrics + poll.
@@ -258,7 +261,7 @@ The two methods share `_initiate_promotion()` (the actual promotion primitive �
 
 #### Other notes
 
-- The helper **respects `load_tier_filter`** exactly as `lookup()` does, so per-request tier restrictions (e.g. `kv_load_tiers` in `kv_transfer_params`) are honored by prefetch too.
+- The helper **respects `load_tier_filter**` exactly as `lookup()` does, so per-request tier restrictions (e.g. `kv_load_tiers` in `kv_transfer_params`) are honored by prefetch too.
 - It **tolerates primary-full**: `_initiate_promotion` returns `False` when `primary_tier.prepare_write()` returns `None`; `prefetch` just skips that key. No exception, no deadlock.
 - It **does not double-promote**: a block already in-flight (`HIT_PENDING`, `ref_cnt = -1`) returns `True` without calling `prepare_write` again, so it never allocates a second primary slot for the same key.
 - Because `_try_promote` does not record metrics, the `prefetch_chunks` counter (Step 4) is the **only** record of prefetch activity — it is load-bearing for the analysis, not just nice-to-have.
@@ -324,11 +327,13 @@ class TieringOffloadingMetrics:
 
 Three counters, not one, because the sweep needs to separate three outcomes:
 
-| Counter | When incremented | Answers |
-|---|---|---|
-| `PREFETCH_ATTEMPTED` | once per key passed to `prefetch()` | "how many blocks did we try to read-ahead?" |
-| `PREFETCH_PROMOTED` | per key where `_try_promote` started a promotion (secondary `HIT` + `_initiate_promotion` succeeded) | "how many read-aheads actually moved data?" |
-| `PREFETCH_SKIPPED` | per key where `_try_promote` returned `False` (not in any secondary tier, or primary full) | "how much read-ahead was wasted?" |
+
+| Counter              | When incremented                                                                                     | Answers                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `PREFETCH_ATTEMPTED` | once per key passed to `prefetch()`                                                                  | "how many blocks did we try to read-ahead?" |
+| `PREFETCH_PROMOTED`  | per key where `_try_promote` started a promotion (secondary `HIT` + `_initiate_promotion` succeeded) | "how many read-aheads actually moved data?" |
+| `PREFETCH_SKIPPED`   | per key where `_try_promote` returned `False` (not in any secondary tier, or primary full)           | "how much read-ahead was wasted?"           |
+
 
 The split matters for diagnosing the U-curve's right side: if latency regresses at large N, `PREFETCH_SKIPPED` rising indicates primary-tier pressure (promotions failing on `prepare_write`), while `PREFETCH_PROMOTED` high + latency still regressing indicates eviction churn (promotions succeeded but the blocks were evicted before use — a capacity problem, not a promotion problem).
 
@@ -441,6 +446,7 @@ def prefetch(self, keys, req_context) -> int:
 ```
 
 **Labeling note for `PREFETCH_ATTEMPTED` and the "not in any tier" skip:** the block was scanned across all secondary tiers, so there is no single tier to label. Two options:
+
 - Label `PREFETCH_ATTEMPTED` with the primary tier label (`PRIMARY_TIER_LABEL`) or a synthetic `"prefetch"` label — it's a count of attempts, not tier-specific work.
 - Label the "not in any tier" skip with the same synthetic label.
 
@@ -479,25 +485,29 @@ Without the split, a rising `PREFETCH_SKIPPED` total is ambiguous: is the toy wa
 
 #### Relationship to existing metrics
 
-| Existing metric | Counts prefetch activity? | Why |
-|---|---|---|
-| `BLOCK_QUERIES` / `BLOCK_HITS` | **No** | `_try_promote` doesn't call `on_lookup()`, so prefetch lookups are excluded. This is deliberate (Step 2) — keeps the demand-lookup signal clean. |
-| `READ_BYTES` / `READ_TIME` | **Yes** | Prefetch promotions complete via the same `_complete_promotion` path as demand promotions, so their bytes/time are counted. This means `READ_BYTES` rises with N (more data moved), which is expected and correct. |
-| `PROMOTION_ALLOCATION_FAILURES` | **Yes** | `_initiate_promotion` calls `on_promotion_allocation_failure()` on primary-full, for both demand and prefetch paths. So this metric rises with N when the CPU tier is pressured — use it alongside `PREFETCH_SKIPPED` to confirm the cause. |
-| `ACTIVE_PROMOTION_JOBS` | **Yes** | Prefetch promotions register jobs via `_register_job`, so they appear in the active-job gauge. Expect this to rise with N. |
+
+| Existing metric                 | Counts prefetch activity? | Why                                                                                                                                                                                                                                         |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLOCK_QUERIES` / `BLOCK_HITS`  | **No**                    | `_try_promote` doesn't call `on_lookup()`, so prefetch lookups are excluded. This is deliberate (Step 2) — keeps the demand-lookup signal clean.                                                                                            |
+| `READ_BYTES` / `READ_TIME`      | **Yes**                   | Prefetch promotions complete via the same `_complete_promotion` path as demand promotions, so their bytes/time are counted. This means `READ_BYTES` rises with N (more data moved), which is expected and correct.                          |
+| `PROMOTION_ALLOCATION_FAILURES` | **Yes**                   | `_initiate_promotion` calls `on_promotion_allocation_failure()` on primary-full, for both demand and prefetch paths. So this metric rises with N when the CPU tier is pressured — use it alongside `PREFETCH_SKIPPED` to confirm the cause. |
+| `ACTIVE_PROMOTION_JOBS`         | **Yes**                   | Prefetch promotions register jobs via `_register_job`, so they appear in the active-job gauge. Expect this to rise with N.                                                                                                                  |
+
 
 So the prefetch-specific counters (`PREFETCH_ATTEMPTED` / `PROMOTED` / `SKIPPED`) are the **only** way to isolate prefetch activity from demand activity. The existing metrics either exclude it (`BLOCK_QUERIES`) or conflate it with demand (`READ_BYTES`, `PROMOTION_ALLOCATION_FAILURES`). This is why Step 4 is load-bearing for the analysis, not just nice-to-have.
 
 ### Step 5 — Guardrails (keep the toy safe)
 
-| Guardrail | How |
-|---|---|
-| Primary-tier pressure | `prefetch` skips any key where `prepare_write` returns `None`. No OOM risk beyond the existing eviction path. Monitor `PROMOTION_ALLOCATION_FAILURES` and `PRIMARY_WRITE_USAGE_PERC`. |
-| No wasted promotion on absent blocks | `_try_promote` only promotes blocks that are secondary-`HIT`; blocks in no tier are skipped. |
-| No double promotion | `HIT_PENDING` short-circuits without allocating. |
-| Honors per-request tier filter | `_try_promote` checks `load_tier_filter.allows(...)`. |
-| Bounded N | Validate `prefetch_chunks` ≤ a sane cap (e.g. 256) in `vllm/v1/kv_offload/tiering/spec.py` to avoid a single miss triggering a multi-thousand-chunk burst. The sweep tops out at 256; the cap should not be the binding constraint in the experiment. |
-| Reversible | `N = 0` is the baseline; the whole feature is gated on `prefetch_chunks > 0`. |
+
+| Guardrail                            | How                                                                                                                                                                                                                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary-tier pressure                | `prefetch` skips any key where `prepare_write` returns `None`. No OOM risk beyond the existing eviction path. Monitor `PROMOTION_ALLOCATION_FAILURES` and `PRIMARY_WRITE_USAGE_PERC`.                                                                 |
+| No wasted promotion on absent blocks | `_try_promote` only promotes blocks that are secondary-`HIT`; blocks in no tier are skipped.                                                                                                                                                          |
+| No double promotion                  | `HIT_PENDING` short-circuits without allocating.                                                                                                                                                                                                      |
+| Honors per-request tier filter       | `_try_promote` checks `load_tier_filter.allows(...)`.                                                                                                                                                                                                 |
+| Bounded N                            | Validate `prefetch_chunks` ≤ a sane cap (e.g. 256) in `vllm/v1/kv_offload/tiering/spec.py` to avoid a single miss triggering a multi-thousand-chunk burst. The sweep tops out at 256; the cap should not be the binding constraint in the experiment. |
+| Reversible                           | `N = 0` is the baseline; the whole feature is gated on `prefetch_chunks > 0`.                                                                                                                                                                         |
+
 
 ## 4. Telemetry and measurement
 
@@ -509,24 +519,25 @@ The Phase 1 sweep uses the SemiAnalysis Weka trace corpus `semianalysisai/cc-tra
 
 Corpus statistics (from the dataset card):
 
-| Field | Value |
-|---|---|
-| Traces | 233 |
-| Main turns | 38,529 |
-| Subagent groups | 787 |
-| Subagent inner requests | 22,467 |
-| Total model requests | 60,996 |
-| Total input tokens (hash-block count × 64) | 12.63 B |
-| Total output tokens | 59.76 M |
-| Block size | 64 tokens |
-| ISL cap | 990,016 tokens (drops KV-block overcount artifacts) |
-| Min requests per session | 20 |
-| Peak concurrent subagent groups | ≤ 10 |
+
+| Field                                      | Value                                               |
+| ------------------------------------------ | --------------------------------------------------- |
+| Traces                                     | 233                                                 |
+| Main turns                                 | 38,529                                              |
+| Subagent groups                            | 787                                                 |
+| Subagent inner requests                    | 22,467                                              |
+| Total model requests                       | 60,996                                              |
+| Total input tokens (hash-block count × 64) | 12.63 B                                             |
+| Total output tokens                        | 59.76 M                                             |
+| Block size                                 | 64 tokens                                           |
+| ISL cap                                    | 990,016 tokens (drops KV-block overcount artifacts) |
+| Min requests per session                   | 20                                                  |
+| Peak concurrent subagent groups            | ≤ 10                                                |
+
 
 Two structural properties drive the N selection:
 
 1. **Bimodal request-size distribution.** The corpus mixes small subagent inner requests (a few hundred to a few thousand tokens = 6–40 blocks) with large main-turn requests (45k–52k tokens ≈ 700–815 blocks of prefix). The large requests are the ones that stress the secondary tier: their prefixes exceed the 64 GiB CPU tier's residency under 32-way concurrency, so a meaningful fraction is evicted to NVMe/CephFS between turns and must be promoted back on the next turn. The toy's benefit concentrates on these large requests.
-
 2. **High prefix reuse (~93–94%).** Within a play, turns share prefix history; only the delta (new user message + prior assistant output) is novel per turn. So the *secondary fetch length* — the number of chunks a request needs to promote from secondary on a miss — is not the full prefix, but the prefix portion evicted from CPU but still resident in secondary. Under 32-way concurrency and 64 GiB CPU, this evicted fraction is the quantity N must cover.
 
 > **The `in` field is hash-block count × 64, not a true tokenizer count.** The dataset card warns it overcounts the real prompt size by up to ~260k tokens in the heavy-cache-write tail. For KV-cache block accounting this is the *relevant* number (it is the count of 64-token prefix blocks), but it means the 12.63 B / 60,996 ≈ 207k mean `in` overstates the real mean prompt. The per-request prefix-block count from the trace is the right input for sizing N.
@@ -535,24 +546,28 @@ Two structural properties drive the N selection:
 
 From the Nemotron report's metric set, compare across N:
 
-| Metric | Source | Expectation if prefetch helps |
-|---|---|---|
-| Request latency P50/P90 | AIPerf profile | lower as N grows, then rises when N overshoots |
-| TTFT P50 | AIPerf profile | lower (fewer deferred prefill steps) |
-| Tiering lookup P50/P90/P99 | `kv_offload_tiering_lookup_async_delay_seconds` | **fewer lookup events per request**; per-event delay unchanged (same backend) |
-| Blocked requests (avg concurrent) | tiering telemetry | lower (requests spend fewer steps stalled) |
-| External-token share | prompt-token-source counters | unchanged or slightly higher (more secondary hits served) |
+
+| Metric                            | Source                                          | Expectation if prefetch helps                                                 |
+| --------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| Request latency P50/P90           | AIPerf profile                                  | lower as N grows, then rises when N overshoots                                |
+| TTFT P50                          | AIPerf profile                                  | lower (fewer deferred prefill steps)                                          |
+| Tiering lookup P50/P90/P99        | `kv_offload_tiering_lookup_async_delay_seconds` | **fewer lookup events per request**; per-event delay unchanged (same backend) |
+| Blocked requests (avg concurrent) | tiering telemetry                               | lower (requests spend fewer steps stalled)                                    |
+| External-token share              | prompt-token-source counters                    | unchanged or slightly higher (more secondary hits served)                     |
+
 
 The decisive comparison is **lookup-event count per request**, not per-event latency: the toy reduces the *number* of deferred steps, not the speed of each secondary read. Add a derived "lookup events per completed request" = `BLOCK_QUERIES / completed_requests` and plot vs N.
 
 ### 4.2 Negative-signal metrics (is prefetch hurting?)
 
-| Metric | Why it matters |
-|---|---|
-| `PROMOTION_ALLOCATION_FAILURES` | rising ⇒ prefetch is crowding out demand promotions |
-| `PRIMARY_WRITE_USAGE_PERC` | sustained near 100% ⇒ primary tier saturated by read-ahead |
-| Total throughput P50 | dropping ⇒ prefetch overhead exceeds its benefit (N too large) |
-| Recompute share | rising ⇒ prefetched blocks evicted demand blocks (LRU pressure) |
+
+| Metric                          | Why it matters                                                  |
+| ------------------------------- | --------------------------------------------------------------- |
+| `PROMOTION_ALLOCATION_FAILURES` | rising ⇒ prefetch is crowding out demand promotions             |
+| `PRIMARY_WRITE_USAGE_PERC`      | sustained near 100% ⇒ primary tier saturated by read-ahead      |
+| Total throughput P50            | dropping ⇒ prefetch overhead exceeds its benefit (N too large)  |
+| Recompute share                 | rising ⇒ prefetched blocks evicted demand blocks (LRU pressure) |
+
 
 ### 4.3 The N sweep
 
@@ -560,15 +575,19 @@ The decisive comparison is **lookup-event count per request**, not per-event lat
 
 The read-ahead knob N is measured in **offload chunks** (one chunk = `blocks_per_chunk` GPU blocks = `blocks_per_chunk × 64` tokens). The token coverage of one read-ahead is:
 
-$$\text{coverage}(N) = N \times \text{blocks\_per\_chunk} \times 64 \text{ tokens}$$
+$$
+\text{coverage}(N) = N \times \text{blocks\_per\_chunk} \times 64 \text{ tokens}
+$$
 
 The sweep must span three regimes relative to **K**, the typical number of chunks a large request fetches from the secondary tier on a miss:
 
-| Regime | Condition | Expected outcome |
-|---|---|---|
-| Too small | $N \ll K$ | read-ahead covers a tiny fraction of the secondary fetch; the request is still deferred $\lceil K/N \rceil$ times → little benefit over reactive |
-| Sweet spot | $N \approx K$ | one read-ahead covers the whole secondary fetch in 1–2 deferred steps → large latency reduction |
-| Too large | $N \gg K$ | read-ahead overshoots the fetch, spending CPU-tier capacity and transfer bandwidth on blocks the request will not reach before they are evicted under 32-way concurrency → regression |
+
+| Regime     | Condition     | Expected outcome                                                                                                                                                                      |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Too small  | $N \ll K$     | read-ahead covers a tiny fraction of the secondary fetch; the request is still deferred $\lceil K/N \rceil$ times → little benefit over reactive                                      |
+| Sweet spot | $N \approx K$ | one read-ahead covers the whole secondary fetch in 1–2 deferred steps → large latency reduction                                                                                       |
+| Too large  | $N \gg K$     | read-ahead overshoots the fetch, spending CPU-tier capacity and transfer bandwidth on blocks the request will not reach before they are evicted under 32-way concurrency → regression |
+
 
 **Estimating K from the workload.** A large main-turn request carries ~700–815 blocks of prefix (45–52k tokens). Under 32-way concurrency with a 64 GiB CPU tier and ~93% reuse, the fraction evicted from CPU but resident in secondary between turns is the fetch length. The Phase 0 baseline ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured a stall rate of ~587–591 events/s over 1,800 s (~1.06 M lookup events); dividing by the completed-request count yields the empirical K. **Measure K from the Phase 0 run** (`BLOCK_QUERIES` / completed requests, or more precisely, secondary-`HIT` promotions per request) and center the sweep on it. Until that measurement is in, the prefix-size distribution above gives the bracket: K is bounded above by the large-request prefix (~700–815 blocks) and below by the per-turn delta (~7% of prefix ≈ 50–60 blocks).
 
@@ -576,18 +595,20 @@ The sweep must span three regimes relative to **K**, the typical number of chunk
 
 `prefetch_chunks ∈ {0, 4, 8, 16, 32, 64, 128, 256}`, with `0` as the within-batch control (reactive baseline). The values are chosen to span the three regimes for the Weka workload:
 
-| N | Token coverage (blocks_per_chunk=1) | Token coverage (blocks_per_chunk=8) | Expected regime |
-|---:|---:|---:|---|
-| 0 | 0 (control) | 0 (control) | reactive baseline |
-| 4 | 256 tok | 2,048 tok | too small — covers <10% of a large fetch |
-| 8 | 512 tok | 4,096 tok | too small — covers <15% of a large fetch |
-| 16 | 1,024 tok | 8,192 tok | transition — covers a small fetch or the per-turn delta |
-| 32 | 2,048 tok | 16,384 tok | approaching sweet spot — covers a moderate fetch |
-| 64 | 4,096 tok | 32,768 tok | expected sweet spot — covers a typical large fetch in 1–2 steps |
-| 128 | 8,192 tok | 65,536 tok | past sweet spot — overshoots, CPU-tier pressure builds |
-| 256 | 16,384 tok | 131,072 tok | too large — 32 concurrent read-aheads compete for 64 GiB CPU → regression |
 
-> **Confirm `blocks_per_chunk`** from the Nemotron run config before the sweep; the token-coverage column shifts with it but the chunk-count sweep is unchanged. If `blocks_per_chunk` is large (e.g. 8), the sweet spot shifts left (smaller N); if it is 1, the sweet spot shifts right. The sweep covers both cases.
+| N   | Token coverage (blocks_per_chunk=1) | Token coverage (blocks_per_chunk=8) | Expected regime                                                           |
+| --- | ----------------------------------- | ----------------------------------- | ------------------------------------------------------------------------- |
+| 0   | 0 (control)                         | 0 (control)                         | reactive baseline                                                         |
+| 4   | 256 tok                             | 2,048 tok                           | too small — covers <10% of a large fetch                                  |
+| 8   | 512 tok                             | 4,096 tok                           | too small — covers <15% of a large fetch                                  |
+| 16  | 1,024 tok                           | 8,192 tok                           | transition — covers a small fetch or the per-turn delta                   |
+| 32  | 2,048 tok                           | 16,384 tok                          | approaching sweet spot — covers a moderate fetch                          |
+| 64  | 4,096 tok                           | 32,768 tok                          | expected sweet spot — covers a typical large fetch in 1–2 steps           |
+| 128 | 8,192 tok                           | 65,536 tok                          | past sweet spot — overshoots, CPU-tier pressure builds                    |
+| 256 | 16,384 tok                          | 131,072 tok                         | too large — 32 concurrent read-aheads compete for 64 GiB CPU → regression |
+
+
+> **Confirm `blocks_per_chunk**` from the Nemotron run config before the sweep; the token-coverage column shifts with it but the chunk-count sweep is unchanged. If `blocks_per_chunk` is large (e.g. 8), the sweet spot shifts left (smaller N); if it is 1, the sweet spot shifts right. The sweep covers both cases.
 
 #### Expected U-curve
 
@@ -641,6 +662,7 @@ The figure below shows the expected shape: latency (or lookup-events-per-request
     }
   ]
 }
+
 ```
 
 The dashed line at 100% is the reactive baseline (N = 0). The curve is illustrative — the actual sweet-spot N and depth depend on K, `blocks_per_chunk`, and the CPU-tier eviction dynamics under this workload. The Phase 1 exit criterion is a **repeatable, attributable** latency improvement at some N > 0 over the N = 0 control, with the U-shape visible across the sweep.
@@ -689,3 +711,4 @@ Explicitly **not** in this toy (deferred to later phases per [[01 - Experiment D
 - [[Activity-Based KV Cache Offloading]] — concept note; the implementation-placement verdict (prediction + placement live in core vLLM `vllm/v1/kv_offload`; this guide follows that verdict).
 - [[00 - Index]] — ABC project index.
 - Workload dataset: [semianalysisai/cc-traces-weka-061526](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-061526) (HuggingFace, public).
+
