@@ -393,28 +393,42 @@ The figure below shows the expected shape: latency (or lookup-events-per-request
   "background": "white",
   "data": {
     "values": [
-      {"N": 0,  "latency": 100, "regime": "control"},
-      {"N": 4,  "latency": 98,  "regime": "too small"},
-      {"N": 8,  "latency": 92,  "regime": "too small"},
-      {"N": 16, "latency": 75,  "regime": "transition"},
-      {"N": 32, "latency": 52,  "regime": "sweet spot"},
-      {"N": 64, "latency": 45,  "regime": "sweet spot"},
-      {"N": 128,"latency": 68,  "regime": "too large"},
-      {"N": 256,"latency": 95,  "regime": "too large"}
+      {"N": 4,   "latency": 98, "regime": "too small"},
+      {"N": 8,   "latency": 92, "regime": "too small"},
+      {"N": 16,  "latency": 75, "regime": "transition"},
+      {"N": 32,  "latency": 52, "regime": "sweet spot"},
+      {"N": 64,  "latency": 45, "regime": "sweet spot"},
+      {"N": 128, "latency": 68, "regime": "too large"},
+      {"N": 256, "latency": 95, "regime": "too large"}
     ]
   },
   "layer": [
     {
-      "mark": {"type": "line", "point": true, "strokeWidth": 2},
+      "mark": {"type": "line", "point": false, "strokeWidth": 2, "color": "#1f77b4"},
       "encoding": {
         "x": {"field": "N", "type": "quantitative", "title": "prefetch_chunks (N)", "scale": {"type": "log", "domain": [1, 256]}},
-        "y": {"field": "latency", "type": "quantitative", "title": "Request latency P50 (normalized, %)", "scale": {"domain": [0, 110]}},
+        "y": {"field": "latency", "type": "quantitative", "title": "Request latency P50 (normalized, %)", "scale": {"domain": [0, 110]}}
+      }
+    },
+    {
+      "mark": {"type": "circle", "size": 100, "stroke": "white", "strokeWidth": 1},
+      "encoding": {
+        "x": {"field": "N", "type": "quantitative", "scale": {"type": "log", "domain": [1, 256]}},
+        "y": {"field": "latency", "type": "quantitative", "scale": {"domain": [0, 110]}},
         "color": {"field": "regime", "type": "nominal", "legend": {"title": "Regime"}}
       }
     },
     {
-      "mark": {"type": "rule", "strokeDash": [4, 4], "color": "gray"},
+      "mark": {"type": "rule", "strokeDash": [4, 4], "color": "gray", "size": 1},
       "encoding": {"y": {"datum": 100}}
+    },
+    {
+      "mark": {"type": "text", "dx": 4, "dy": -8, "color": "gray", "fontSize": 10},
+      "encoding": {
+        "x": {"datum": 256},
+        "y": {"datum": 100},
+        "text": {"datum": "N = 0 reactive baseline"}
+      }
     }
   ]
 }

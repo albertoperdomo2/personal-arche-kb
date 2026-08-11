@@ -4,6 +4,7 @@ Durable record of research experiments, including hypotheses, experiment runs, f
 
 ## Active experiments
 
+- [[ABC/00 - Index|ABC]] — Activity-Based KV Cache Tier Placement: evolving the vLLM KV offload engine from reactive, demand-driven block fetching toward predictive, speculative prefetching across a four-tier hierarchy (GPU HBM / CPU DRAM / NVMe / CephFS). Four-phase path: baseline characterization → naive prefetch N blocks → heuristic prefetch → speculative (XGBoost temperature prediction + cost-aware placement + session-aware prefetch).
 - [[KV Cache Offloading/00 - Index|KV Cache Offloading]] — determine when HBM-only, CPU offload, and CPU+NVMe offload produce materially different performance for agentic prefix-reuse workloads.
 
 ## Capture conventions
