@@ -97,6 +97,26 @@ The bars below use the AIPerf `Active Total Throughput (tokens/sec)` P50 from ea
 
 The storage tiers are higher than the no-offload and CPU-only profile P50 values in these single runs, but image/version and storage configuration drift prevent a causal ranking.
 
+## KV-offload metric taxonomy
+
+The report distinguishes the latency paths as follows. This prevents CUDA transfer time from being interpreted as external-cache fetch latency.
+
+| Metric family | What it measures | Use in this comparison |
+|---|---|---|
+| `kv_offload_transfer_mean_seconds_by_engine` | Mean CUDA DMA duration per CPU→GPU load or GPU→CPU store; transfer time only, excluding queueing | CPU: 28.4 ms mean; CephFS: 27.9 ms; NVMe: 26.2 ms; no-offload: unavailable |
+| `kv_offload_tiering_lookup_async_mean_seconds_by_engine` and P50/P90/P99 | Scheduler-visible delay for deferred external-tier retrieval | CephFS and NVMe are the primary external-cache latency signals; CPU/no-offload: unavailable |
+| `kv_offload_tiering_lookup_async_stall_rate_by_engine` | Deferred external-tier lookups per second | CephFS mean 587/s; NVMe mean 591/s |
+| `kv_offload_tiering_lookup_async_blocked_requests_by_engine` | Average concurrent requests waiting for external retrieval | CephFS mean 853; NVMe mean 1,154 |
+| `kv_offload_tiering_lookup_sync_p99_seconds_by_engine` | Scheduler-thread time initiating/checking a secondary-tier lookup | CPU mean 15.2 µs; CephFS 27.8 ms mean due to transient spikes; NVMe 9.9 µs |
+| `kv_offload_lookup_async_p90_seconds_by_engine` | Connector-wide async lookup, including CPU-tier behavior | CephFS mean 8.98 s; NVMe 6.88 s; not external-tier-specific |
+| `kv_offload_lookup_sync_p99_seconds_by_engine` | Connector-wide synchronous lookup, including CPU-tier behavior | CPU late-run value ≈31.5 ms; CephFS ≈30.0 ms; NVMe ≈43.1 ms |
+| `kv_offload_seconds_per_gib_by_pod` | DMA cost normalized by transferred GiB | CPU 0.053 s/GiB; CephFS 0.058; NVMe 0.054 |
+| `kv_offload_transfer_bandwidth_by_engine` | DMA bandwidth, not external-storage bandwidth | CPU ≈20.7 GB/s; CephFS ≈18.8; NVMe ≈20.1 |
+
+The CPU-only run therefore does have lookup and transfer telemetry, but it has no external-tier async retrieval. Its relevant lookup signal is connector/CPU-tier lookup, not CephFS/NVMe fetch delay. For CephFS and NVMe, the tiering async metrics are the correct request-facing retrieval measures. The tiering-sync P99 should remain small; the CephFS mean is inflated by transient samples, while its latest value is approximately 9.9 µs.
+
+The `kv_offload_transfer_mean_seconds_by_engine` and `kv_offload_transfer_bandwidth_by_engine` values above describe CUDA DMA only. They must not be used to infer filesystem or NVMe I/O latency.
+
 ## Conclusions and next step
 
 **Established:** CPU-only lookup is measurable at roughly 30–33 ms late in its run; CephFS and NVMe expose multi-second tiering lookup delays, blocked requests, and stall rates. **Not established:** a causal storage ranking, because images/settings differ and overflow telemetry is missing.
