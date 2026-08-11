@@ -287,7 +287,7 @@ Also log a one-line summary per step when `prefetch_chunks > 0` so the model log
 | No wasted promotion on absent blocks | `_try_promote` only promotes blocks that are secondary-`HIT`; blocks in no tier are skipped. |
 | No double promotion | `HIT_PENDING` short-circuits without allocating. |
 | Honors per-request tier filter | `_try_promote` checks `load_tier_filter.allows(...)`. |
-| Bounded N | Validate `prefetch_chunks` ≤ a sane cap (e.g. 64) in `spec.py` to avoid a single miss triggering a multi-hundred-chunk burst. |
+| Bounded N | Validate `prefetch_chunks` ≤ a sane cap (e.g. 256) in `spec.py` to avoid a single miss triggering a multi-thousand-chunk burst. The sweep tops out at 256; the cap should not be the binding constraint in the experiment. |
 | Reversible | `N = 0` is the baseline; the whole feature is gated on `prefetch_chunks > 0`. |
 
 ## 4. Telemetry and measurement
@@ -432,17 +432,19 @@ This maps directly to Phase 1 of [[01 - Experiment Definition]].
 
 1. **Implement** Steps 1–4 on a vLLM fork/branch; keep `N = 0` path identical to `main`.
 2. **Unit-test** `_try_promote` and `prefetch` with a mock primary tier and a mock `SecondaryTierManager`: assert no double-promotion, primary-full tolerance, filter honored, `N = 0` no-op.
-3. **Deploy** the branch image to the PSAP cluster; record the full image digest (per [[Experiment Methodology]]).
-4. **Sweep** N ∈ {0, 1, 2, 4, 8, 16}, 3 repetitions each, same batch, same node class.
-5. **Report** as a dated note under `Research/ABC/`: latency curves, lookup-event-count-per-request vs N, negative-signal metrics, and a **go/no-go decision**.
-6. **Exit gate** (from the experiment definition): a measurable, repeatable latency change for at least three values of N, reported as mean ± CI with paired-request analysis, plus a recorded decision on whether to proceed to Phase 2.
+3. **Measure K from Phase 0.** From the existing Nemotron baseline run ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]), compute the empirical secondary-fetch length per large request: secondary-`HIT` promotions per completed request, or `BLOCK_QUERIES` / completed requests. This anchors the sweep's sweet-spot expectation (Section 4.3).
+4. **Deploy** the branch image to the PSAP cluster; record the full image digest (per [[Experiment Methodology]]).
+5. **Sweep** `prefetch_chunks ∈ {0, 4, 8, 16, 32, 64, 128, 256}`, 3 repetitions each, same batch, same node class, on the `cc-traces-weka-061526` workload (Section 4.0). `0` is the within-batch control.
+6. **Report** as a dated note under `Research/ABC/`: latency curves vs N, lookup-events-per-request vs N, negative-signal metrics, the measured K, and a **go/no-go decision**. The report should show the U-curve (Figure 2 shape) and identify the sweet-spot N.
+7. **Exit gate** (from the experiment definition): a measurable, repeatable latency change for at least three values of N, reported as mean ± CI with paired-request analysis, plus a recorded decision on whether to proceed to Phase 2.
 
 ## 6. Risks and unknowns
 
-- **Primary-tier eviction churn.** Read-ahead fills the CPU tier with blocks the request *will* need soon, but under concurrency 32 several requests' read-aheads compete for the same 64 GiB CPU tier. If prefetched blocks evict each other (or evict demand blocks), latency regresses. The `PRIMARY_WRITE_USAGE_PERC` and recompute-share metrics catch this; the U-curve's right side quantifies it.
-- **Interaction with `offload_prompt_only`.** `OffloadingSpec.offload_prompt_only` defaults to `True` (decode blocks are not offloaded). Read-ahead only touches prompt-prefix chunks, so this is consistent — but confirm the prefetched keys are all prompt chunks during the run.
+- **Primary-tier eviction churn (the right side of the U-curve).** Read-ahead fills the CPU tier with blocks the request *will* need soon, but under concurrency 32 several large requests' read-aheads compete for the same 64 GiB CPU tier. At N = 128–256, 32 concurrent read-aheads of 8k–16k blocks each can demand far more CPU residency than the tier holds, so prefetched blocks evict each other (or evict demand blocks), and latency regresses. The `PRIMARY_WRITE_USAGE_PERC` and recompute-share metrics catch this; the U-curve's right side quantifies it. The bimodal Weka workload makes this acute: the large main-turn requests are exactly the ones that read-ahead, and they arrive in bursts when subagents rejoin.
+- **Interaction with `offload_prompt_only`.** `OffloadingSpec.offload_prompt_only` defaults to `True` (decode blocks are not offloaded). Read-ahead only touches prompt-prefix chunks, so this is consistent — but confirm the prefetched keys are all prompt chunks during the run. The Weka workload's ~93% reuse means most prefetched prefix chunks are genuinely reused within the play, which is what makes read-ahead viable here; a low-reuse workload would waste more.
 - **Censored P99.** The Nemotron report notes overflow buckets are unavailable, so P99 at 10 s is a lower bound. Use P50/P90 and lookup-event-count as the primary signals; treat P99 as directional only until overflow is exported (a Phase 0 telemetry-gap item).
 - **Multi-group models.** `offload_keys` are per KV group; `prefetch` is called within one group's scan. For multi-group models the toy is applied per full-attention group independently. This is fine for Phase 1 but must be revisited if groups have very different chunk sizes.
+- **K estimation uncertainty.** The sweet-spot N depends on K (the secondary-fetch length per large request), which is not yet measured directly. The sweep spans a wide range (4–256) precisely to bracket the uncertainty; if the measured K falls outside this range, extend the sweep before concluding.
 
 ## 7. Out of scope for Phase 1
 
@@ -459,6 +461,8 @@ Explicitly **not** in this toy (deferred to later phases per [[01 - Experiment D
 
 - [[01 - Experiment Definition]] — Phase 1 objective, method, and exit criteria.
 - [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 baseline data and the lookup-delay numbers this toy targets.
+- [[AgentX Workload Definition]] — the agentic-replay workload family; the `061526` corpus used here is a tighter-filtered build of the same family.
 - [[Experiment Methodology]] — run structure, acceptance gates, repetition requirements.
 - [[Activity-Based KV Cache Offloading]] — concept note; the implementation-placement verdict (prediction + placement live in core vLLM `vllm/v1/kv_offload`; this guide follows that verdict).
 - [[00 - Index]] — ABC project index.
+- Workload dataset: [semianalysisai/cc-traces-weka-061526](https://huggingface.co/datasets/semianalysisai/cc-traces-weka-061526) (HuggingFace, public).
