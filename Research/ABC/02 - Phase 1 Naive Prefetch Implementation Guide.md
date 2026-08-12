@@ -319,23 +319,42 @@ class TieringOffloadingMetrics:
     PROMOTION_ALLOCATION_FAILURES = (
         "vllm:kv_offload_tiering_promotion_allocation_failures"
     )
-    # NEW — Phase 1 prefetch counters
+    # NEW — Phase 1 prefetch process counters
     PREFETCH_ATTEMPTED = "vllm:kv_offload_tiering_prefetch_attempted"
     PREFETCH_PROMOTED = "vllm:kv_offload_tiering_prefetch_promoted"
     PREFETCH_SKIPPED = "vllm:kv_offload_tiering_prefetch_skipped"
+    # NEW — Phase 1 prefetch outcome counters
+    PREFETCH_USEFUL = "vllm:kv_offload_tiering_prefetch_useful"
+    PREFETCH_WASTED = "vllm:kv_offload_tiering_prefetch_wasted"
 ```
 
-Three counters, not one, because the sweep needs to separate three outcomes:
+Five counters, split into **process** (was the prefetch mechanism firing?) and **outcome** (did the GPU actually use the prefetched blocks?):
 
+| Counter | Type | When incremented | Answers |
+|---|---|---|---|
+| `PREFETCH_ATTEMPTED` | process | once per key passed to `prefetch()` | "how many blocks did we try to read-ahead?" |
+| `PREFETCH_PROMOTED` | process | per key where `_try_promote` started a promotion (secondary `HIT` + `_initiate_promotion` succeeded) | "how many read-aheads actually moved data?" |
+| `PREFETCH_SKIPPED` | process | per key where `_try_promote` returned `False` (not in any secondary tier, or primary full) | "how much read-ahead was wasted at the promotion stage?" |
+| `PREFETCH_USEFUL` | outcome | a demand `lookup()` returns `HIT` for a key that was prefetched | "did the GPU actually use a prefetched block?" |
+| `PREFETCH_WASTED` | outcome | a prefetched block was evicted before use (demand `lookup()` returns `MISS`), or the request finished without the demand scan ever reaching it | "was the prefetch wasted after promotion?" |
 
-| Counter              | When incremented                                                                                     | Answers                                     |
-| -------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `PREFETCH_ATTEMPTED` | once per key passed to `prefetch()`                                                                  | "how many blocks did we try to read-ahead?" |
-| `PREFETCH_PROMOTED`  | per key where `_try_promote` started a promotion (secondary `HIT` + `_initiate_promotion` succeeded) | "how many read-aheads actually moved data?" |
-| `PREFETCH_SKIPPED`   | per key where `_try_promote` returned `False` (not in any secondary tier, or primary full)           | "how much read-ahead was wasted?"           |
+The process counters diagnose the promotion stage; the outcome counters diagnose whether the promotion helped. The full measurement chain is:
 
+```
+PREFETCH_ATTEMPTED
+  ├── PREFETCH_SKIPPED     (not in any secondary tier, or primary full)
+  └── PREFETCH_PROMOTED    (promotion initiated — the "total prefetched")
+        ├── PREFETCH_USEFUL  (demand lookup HIT on a prefetched block)
+        └── PREFETCH_WASTED  (evicted before use, or never reached)
+```
 
-The split matters for diagnosing the U-curve's right side: if latency regresses at large N, `PREFETCH_SKIPPED` rising indicates primary-tier pressure (promotions failing on `prepare_write`), while `PREFETCH_PROMOTED` high + latency still regressing indicates eviction churn (promotions succeeded but the blocks were evicted before use — a capacity problem, not a promotion problem).
+The prefetch hit rate is computed in PromQL, not stored as a metric:
+
+```
+prefetch_hit_rate = PREFETCH_USEFUL / (PREFETCH_USEFUL + PREFETCH_WASTED)
+```
+
+where `PREFETCH_USEFUL + PREFETCH_WASTED = PREFETCH_PROMOTED` (every successfully promoted block is eventually either demand-hit or wasted). The process split matters for diagnosing the U-curve's right side: if latency regresses at large N, `PREFETCH_SKIPPED` rising indicates primary-tier pressure (promotions failing on `prepare_write`), while `PREFETCH_PROMOTED` high + `PREFETCH_USEFUL` low indicates eviction churn (promotions succeeded but the blocks were evicted before use — a capacity problem, not a promotion problem).
 
 #### 4b — Declare the metric definitions
 
@@ -362,6 +381,24 @@ metrics[TieringOffloadingMetrics.PREFETCH_SKIPPED] = OffloadingCounterMetadata(
     documentation=(
         "Number of prefetch chunks skipped (not in any secondary tier, or "
         "primary tier full), labeled by tier. Subset of PREFETCH_ATTEMPTED."
+    ),
+    labelnames=("tier",),
+)
+metrics[TieringOffloadingMetrics.PREFETCH_USEFUL] = OffloadingCounterMetadata(
+    documentation=(
+        "Number of prefetched chunks that were subsequently demand-hit by "
+        "the GPU (lookup() returned HIT on a prefetched block). Labeled by "
+        "tier. Subset of PREFETCH_PROMOTED. The prefetch hit rate is "
+        "PREFETCH_USEFUL / (PREFETCH_USEFUL + PREFETCH_WASTED)."
+    ),
+    labelnames=("tier",),
+)
+metrics[TieringOffloadingMetrics.PREFETCH_WASTED] = OffloadingCounterMetadata(
+    documentation=(
+        "Number of prefetched chunks that were evicted from the primary tier "
+        "before the demand scan reached them, or that the request finished "
+        "without ever reaching. Labeled by tier. Subset of "
+        "PREFETCH_PROMOTED."
     ),
     labelnames=("tier",),
 )
@@ -397,15 +434,44 @@ def on_prefetch_skipped(self, tier_label: TierLabel) -> None:
     self._stats.increase_counter(
         TieringOffloadingMetrics.PREFETCH_SKIPPED, labelvalues=tier_label
     )
+
+def on_prefetch_useful(self, tier_label: TierLabel) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PREFETCH_USEFUL, labelvalues=tier_label
+    )
+
+def on_prefetch_wasted(self, tier_label: TierLabel) -> None:
+    self._stats.increase_counter(
+        TieringOffloadingMetrics.PREFETCH_WASTED, labelvalues=tier_label
+    )
 ```
 
 The `tier_label` comes from `self._metrics.tier_label(i)` — the same helper already used in `lookup()` for the demand-path metrics. For prefetch, the label is the tier where the promotion was attempted (or the first tier scanned, for skipped blocks that were in no tier).
 
-#### 4d — Call the tracker from `prefetch()`
+#### 4d — Call the tracker from `prefetch()` and track outcomes in `lookup()`
 
-**File:** `vllm/v1/kv_offload/tiering/manager.py`, in the `prefetch()` method added in Step 2.
+**File:** `vllm/v1/kv_offload/tiering/manager.py`.
 
-Update `prefetch()` to record the three outcomes. This requires `_try_promote` to return *why* it returned `False` (not in any tier vs. primary full), so it returns a small enum or string instead of a bare bool:
+This step has three parts: (1) record the process counters in `prefetch()`, (2) track which keys were prefetched so `lookup()` can detect outcomes, and (3) clean up at request finish. The outcome tracking (`PREFETCH_USEFUL` / `PREFETCH_WASTED`) is what tells you whether the prefetch actually helped — without it, the sweep can only see latency, not whether the prefetched blocks were used by the GPU.
+
+**Part 1 — `__init__`: add the prefetched-key tracking set.**
+
+```python
+class TieringOffloadingManager(OffloadingManager):
+    def __init__(self, primary_tier, secondary_tiers=None, prefetch_chunks: int = 0):
+        ...
+        self._prefetch_chunks = prefetch_chunks
+        # Per-request set of keys that were prefetched (promoted via
+        # prefetch(), not via the demand path). lookup() checks this to
+        # detect whether a demand HIT landed on a prefetched block (useful)
+        # or whether the block was evicted before the scan reached it (wasted).
+        self._prefetched_keys: dict[str, set[OffloadKey]] = {}
+        ...
+```
+
+**Part 2 — `_try_promote` and `prefetch()`: record process counters and register keys for outcome tracking.**
+
+`_try_promote` must return *why* it returned `False` (not in any tier vs. primary full), so it returns `(promoted, tier_idx)` instead of a bare bool:
 
 ```python
 def _try_promote(self, key, req_context, exclude_tier_idx=None):
@@ -442,6 +508,9 @@ def prefetch(self, keys, req_context) -> int:
             initiated += 1
             # Promotion succeeded on a specific secondary tier.
             self._metrics.on_prefetch_promoted(self._metrics.tier_label(tier_idx))
+            # Register the key for outcome tracking: lookup() will check
+            # this set to detect useful (demand HIT) vs wasted (evicted).
+            self._prefetched_keys.setdefault(req_context.req_id, set()).add(key)
         elif tier_idx is not None:
             # Block was in a secondary tier but primary was full.
             self._metrics.on_prefetch_skipped(self._metrics.tier_label(tier_idx))
@@ -450,6 +519,78 @@ def prefetch(self, keys, req_context) -> int:
             self._metrics.on_prefetch_skipped(PREFETCH_TIER_LABEL)
     return initiated
 ```
+
+**Part 3 — `lookup()`: detect useful vs wasted prefetches.**
+
+Add a check right after the primary-tier lookup, **before** the existing `HIT` / `HIT_PENDING` returns. This is the only modification to `lookup()` — the existing metrics, polling, and secondary-scan logic stay unchanged:
+
+```python
+def lookup(self, key, req_context, *, exclude_tier_idx=None) -> LookupResult:
+    self._maybe_process_finished_jobs()
+
+    start_time = time.monotonic()
+    primary_hit = self.primary_tier.lookup(key, req_context)
+    lookup_duration = time.monotonic() - start_time
+    self._metrics.on_lookup(
+        req_context, key, self._metrics.primary_tier_label,
+        primary_hit, lookup_duration,
+    )
+
+    # ---- NEW: prefetch outcome tracking ----
+    prefetched = self._prefetched_keys.get(req_context.req_id)
+    if prefetched and key in prefetched:
+        if primary_hit is LookupResult.HIT:
+            # Demand scan hit a prefetched block — the prefetch was useful.
+            prefetched.discard(key)
+            self._metrics.on_prefetch_useful(PREFETCH_TIER_LABEL)
+        elif primary_hit is LookupResult.MISS:
+            # Block was prefetched but evicted from primary before the
+            # demand scan reached it — wasted.
+            prefetched.discard(key)
+            self._metrics.on_prefetch_wasted(PREFETCH_TIER_LABEL)
+        # HIT_PENDING: promotion still in-flight — leave in set, count
+        # on a later step when it resolves to HIT or MISS.
+    # ---- end prefetch outcome tracking ----
+
+    if primary_hit is LookupResult.HIT:
+        return LookupResult.HIT
+    if primary_hit is LookupResult.HIT_PENDING:
+        return LookupResult.HIT_PENDING
+    # ... existing secondary-scan logic unchanged ...
+```
+
+The three primary-tier verdicts map cleanly to the three prefetch outcomes:
+
+| Primary `lookup()` returns | For a prefetched key, this means | Counted as |
+|---|---|---|
+| `HIT` | Block was prefetched, promotion completed, demand scan found it ready | **USEFUL** |
+| `HIT_PENDING` | Block was prefetched, promotion still in-flight | not counted yet (leave in set) |
+| `MISS` | Block was prefetched but evicted from primary before the demand scan reached it | **WASTED** |
+
+A block with `ref_cnt = -1` (in-flight) cannot be evicted — the negative ref_cnt protects it. So a prefetched block can only become `MISS` after it was promoted and then evicted by the LRU/ARC policy. That's exactly the "wasted by eviction" case.
+
+**Part 4 — `on_request_finished()`: clean up unreached prefetched keys.**
+
+Keys still in the set when the request finishes were never demand-hit — the request completed before the scan reached them. Count them as wasted and clear the set:
+
+```python
+@override
+def on_request_finished(self, req_context, *, exclude_tier_idx=None):
+    # Keys still tracked as prefetched were never demand-hit — the request
+    # finished before the scan reached them. Count as wasted.
+    remaining = self._prefetched_keys.pop(req_context.req_id, set())
+    for _ in remaining:
+        self._metrics.on_prefetch_wasted(PREFETCH_TIER_LABEL)
+
+    self.primary_tier.on_request_finished(req_context)
+    state = self._req_state[req_context.req_id]
+    state.is_finished = True
+    self._maybe_finalize_request(req_context.req_id, exclude_tier_idx)
+```
+
+**Memory and overhead.** `_prefetched_keys` holds at most N keys per active request. With 32 concurrent requests and N up to 256, that's at most 8,192 `OffloadKey`s (each ~36 bytes) — ~288 KB. The `lookup()` check is a `dict.get()` + `set.__contains__()` — O(1), negligible vs the primary-tier lookup that already happened.
+
+**Cross-request sharing caveat.** Blocks are content-addressed, so two requests sharing a prefix share `OffloadKey`s. If request A prefetches block X and request B's demand scan hits it, we'd miss the useful count (we check B's set, not A's). For Phase 1, this undercounts the hit rate slightly — acceptable, since the relative comparison across N values is still valid. A global set (not per-request) would fix this but complicates cleanup. Phase 2 can revisit if needed.
 
 `PREFETCH_TIER_LABEL` is a constant defined in `vllm/v1/kv_offload/tiering/metrics.py` next to the existing `PRIMARY_TIER_LABEL`, and imported into `manager.py`:
 
@@ -487,14 +628,14 @@ class TieringOffloadingManager(OffloadingManager):
 
 No per-step logging, no standalone accumulators on the manager. The startup line is sufficient to confirm the feature is active in the model log (the deployment checklist in [[Experiment Methodology]] requires a complete log; this satisfies "is prefetch on?" without per-step spam at 32-way concurrency). If prefetch stops firing mid-run (e.g., after a cache reset), that's visible in Prometheus as the counter rate dropping to zero — which is the right place to look for time-series behavior, not the log.
 
-#### Why three counters, not one
+#### Why five counters, not one
 
-The single-counter version ("increment `PREFETCH_CHUNKS` per promotion") cannot distinguish the two failure modes that the U-curve's right side must diagnose:
+The single-counter version ("increment `PREFETCH_CHUNKS` per promotion") cannot distinguish the failure modes that the U-curve's two sides must diagnose:
 
-- **Primary-full skips** (`PREFETCH_SKIPPED` with a real tier label): the block *was* in secondary but the CPU tier had no room. This is the capacity pressure the sweep is measuring. Rising `PREFETCH_SKIPPED` + rising `PROMOTION_ALLOCATION_FAILURES` = the CPU tier is the bottleneck.
-- **Absent-block skips** (`PREFETCH_SKIPPED` with the synthetic label): the block was never offloaded to any tier. This is expected for a fraction of the prefix (the per-turn delta) and is not a problem — it just means read-ahead reached the end of the offloaded region.
+- **Process failures** (`PREFETCH_SKIPPED`): the block *was* in secondary but the CPU tier had no room (primary-full skip, labeled with a real tier label), or the block was never offloaded (absent-block skip, labeled with `PREFETCH_TIER_LABEL`). Rising primary-full skips + rising `PROMOTION_ALLOCATION_FAILURES` = the CPU tier is the bottleneck.
+- **Outcome failures** (`PREFETCH_WASTED`): the block *was* promoted but evicted before the demand scan reached it, or the request finished without ever reaching it. High `PREFETCH_PROMOTED` + low `PREFETCH_USEFUL` = eviction churn (the right side of the U-curve). This is the signal that distinguishes "prefetch is moving data that gets thrown away" from "prefetch is moving data that gets used."
 
-Without the split, a rising `PREFETCH_SKIPPED` total is ambiguous: is the toy wasting work on absent blocks (fine) or choking on primary pressure (the signal to back off N)? The three-counter split resolves this.
+Without the process/outcome split, a rising total is ambiguous: is the toy wasting work on absent blocks (fine), choking on primary pressure (back off N), or promoting blocks that get evicted (back off N for a different reason)? The five-counter split resolves all three.
 
 #### Relationship to existing metrics
 
@@ -507,7 +648,7 @@ Without the split, a rising `PREFETCH_SKIPPED` total is ambiguous: is the toy wa
 | `ACTIVE_PROMOTION_JOBS`         | **Yes**                   | Prefetch promotions register jobs via `_register_job`, so they appear in the active-job gauge. Expect this to rise with N.                                                                                                                  |
 
 
-So the prefetch-specific counters (`PREFETCH_ATTEMPTED` / `PROMOTED` / `SKIPPED`) are the **only** way to isolate prefetch activity from demand activity. The existing metrics either exclude it (`BLOCK_QUERIES`) or conflate it with demand (`READ_BYTES`, `PROMOTION_ALLOCATION_FAILURES`). This is why Step 4 is load-bearing for the analysis, not just nice-to-have.
+So the prefetch-specific counters (`PREFETCH_ATTEMPTED` / `PROMOTED` / `SKIPPED` / `USEFUL` / `WASTED`) are the **only** way to isolate prefetch activity from demand activity. The existing metrics either exclude it (`BLOCK_QUERIES`) or conflate it with demand (`READ_BYTES`, `PROMOTION_ALLOCATION_FAILURES`). The process counters (`ATTEMPTED` / `PROMOTED` / `SKIPPED`) tell you if the mechanism is firing; the outcome counters (`USEFUL` / `WASTED`) tell you if it's helping. This is why Step 4 is load-bearing for the analysis, not just nice-to-have.
 
 ### Step 5 — Guardrails (keep the toy safe)
 
@@ -567,9 +708,12 @@ From the Nemotron report's metric set, compare across N:
 | Tiering lookup P50/P90/P99        | `kv_offload_tiering_lookup_async_delay_seconds` | **fewer lookup events per request**; per-event delay unchanged (same backend) |
 | Blocked requests (avg concurrent) | tiering telemetry                               | lower (requests spend fewer steps stalled)                                    |
 | External-token share              | prompt-token-source counters                    | unchanged or slightly higher (more secondary hits served)                     |
+| **Prefetch hit rate**             | `PREFETCH_USEFUL / (PREFETCH_USEFUL + PREFETCH_WASTED)` | high at the sweet spot, drops at large N (eviction churn) |
 
 
 The decisive comparison is **lookup-event count per request**, not per-event latency: the toy reduces the *number* of deferred steps, not the speed of each secondary read. Add a derived "lookup events per completed request" = `BLOCK_QUERIES / completed_requests` and plot vs N.
+
+The **prefetch hit rate** is the second decisive signal: it tells you whether the latency improvement is *caused by the prefetch* (high hit rate at the sweet-spot N) or *despite the prefetch* (low hit rate, meaning the demand path is still doing the work and the latency improvement comes from something else). A high hit rate that drops at large N confirms the U-curve's right side is eviction churn — the prefetched blocks were promoted but evicted before the GPU could use them. Plot the hit rate alongside the latency U-curve; they should move together (high hit rate ↔ low latency) until the eviction threshold, where they diverge (hit rate drops, latency rises).
 
 ### 4.2 Negative-signal metrics (is prefetch hurting?)
 
@@ -682,7 +826,13 @@ The dashed line at 100% is the reactive baseline (N = 0). The curve is illustrat
 
 #### Measurement protocol
 
-Minimum 3 paired repetitions per cell; report mean ± CI and paired-request tail analysis (pair by `conversation_id` / turn / depth, per [[Experiment Methodology]]). Plot both latency and lookup-events-per-request vs N — the latter should show the same U-shape but inverted (high at small N, dips at the sweet spot, rises again at large N due to evicted-and-refetched churn).
+Minimum 3 paired repetitions per cell; report mean ± CI and paired-request tail analysis (pair by `conversation_id` / turn / depth, per [[Experiment Methodology]]). Plot three curves against N:
+
+1. **Latency** (request P50/P90) — the U-curve (Figure 2 shape).
+2. **Lookup-events-per-request** (`BLOCK_QUERIES` / completed requests) — should show the same U-shape but inverted (high at small N, dips at the sweet spot, rises again at large N due to evicted-and-refetched churn).
+3. **Prefetch hit rate** (`PREFETCH_USEFUL / (PREFETCH_USEFUL + PREFETCH_WASTED)`) — should be high at the sweet spot (the prefetch is useful) and drop at large N (prefetched blocks evicted before use). This is the signal that confirms the latency improvement is *caused by the prefetch*, not despite it.
+
+The hit rate and latency curves should move together until the eviction threshold: high hit rate ↔ low latency. Where they diverge (hit rate drops, latency rises) is the onset of the U-curve's right side — the point where N is too large.
 
 ## 5. Run plan and exit criteria
 
@@ -693,7 +843,7 @@ This maps directly to Phase 1 of [[01 - Experiment Definition]].
 3. **Measure K from Phase 0.** From the existing Nemotron baseline run ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]), compute the empirical secondary-fetch length per large request: secondary-`HIT` promotions per completed request, or `BLOCK_QUERIES` / completed requests. This anchors the sweep's sweet-spot expectation (Section 4.3).
 4. **Deploy** the branch image to the PSAP cluster; record the full image digest (per [[Experiment Methodology]]).
 5. **Sweep** `prefetch_chunks ∈ {0, 4, 8, 16, 32, 64, 128, 256}`, 3 repetitions each, same batch, same node class, on the `cc-traces-weka-061526` workload (Section 4.0). `0` is the within-batch control.
-6. **Report** as a dated note under `Research/ABC/`: latency curves vs N, lookup-events-per-request vs N, negative-signal metrics, the measured K, and a **go/no-go decision**. The report should show the U-curve (Figure 2 shape) and identify the sweet-spot N.
+6. **Report** as a dated note under `Research/ABC/`: latency curves vs N, lookup-events-per-request vs N, prefetch hit rate vs N, negative-signal metrics, the measured K, and a **go/no-go decision**. The report should show the U-curve (Figure 2 shape), the hit rate curve alongside it, and identify the sweet-spot N where hit rate is high and latency is low.
 7. **Exit gate** (from the experiment definition): a measurable, repeatable latency change for at least three values of N, reported as mean ± CI with paired-request analysis, plus a recorded decision on whether to proceed to Phase 2.
 
 ## 6. Risks and unknowns
@@ -711,6 +861,7 @@ Explicitly **not** in this toy (deferred to later phases per [[01 - Experiment D
 - Any prediction model (XGBoost or otherwise) — Phase 3.
 - The cost-benefit migration gate $\text{Benefit} > N \times \text{Cost}$ — Phase 3.
 - Access-frequency / recency feature collection — Phase 2 (the toy uses only sequence order, not access history).
+- Adaptive N based on prefetch hit rate — Phase 2. The hit rate measured in Phase 1 (`PREFETCH_USEFUL / (PREFETCH_USEFUL + PREFETCH_WASTED)`) is the input signal for an adaptive read-ahead policy: ~100% hit rate → increase N (2→4→8→16, capped); ~0% → stop prefetching; ~50% → hold or reduce N. Phase 1 uses static N; the sweep data informs the adaptive thresholds.
 - Session-aware prefetching on conversation migration — Phase 3.
 - Sliding-window-group read-ahead — Phase 2.
 - Temperature export to the llm-d endpoint picker — Phase 3.
