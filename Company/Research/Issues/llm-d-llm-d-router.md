@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-07-25
+last_updated: 2026-08-13
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -23,6 +23,13 @@ last_updated: 2026-07-25
   - issue: https://github.com/llm-d/llm-d-router/issues/2172
 - **`probabilistic-admitter-epp-config.yaml` header no longer describes admission composition** · Low · Confirmed — Update header comment against `pkg/epp/requestcontrol/admission.go`  <!-- fp: llm-d/llm-d-router:issue:probabilistic-admitter-config-header-stale -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2182
+- **Chart ships no RBAC for the EPP's authenticated /metrics endpoint (401 anonymous, 500 with token)** · High · Confirmed — Add a gated `system:auth-delegator` ClusterRoleBinding for the EPP ServiceAccount plus a `<release>-metrics-reader` ClusterRole behind a chart value; document the bearer-token scrape pattern  <!-- fp: llm-d/llm-d-router:issue:chart-metrics-rbac-missing -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2370
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/cmd/epp/runner/runner.go#L390-L399
+- **Support enabling EPP feature gates without duplicating the full plugin config** · Medium · Confirmed — Add a `--feature-gates` flag in `pkg/epp/server/options.go`, append parsed entries to `rawConfig.FeatureGates` after the config file, and add a structured `router.epp.pluginsConfig` chart map  <!-- fp: llm-d/llm-d-router:issue:epp-feature-gates-flag -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2358
+- **Remove deprecated UDS/legacy tokenizer code paths and drop the llm-d-kv-cache dependency** · Low · Confirmed — Remove the UDS/legacy tokenizer paths and `TokenizersPoolConfig`, then drop `github.com/llm-d/llm-d-kv-cache` from `go.mod`/`go.sum` and confirm `make presubmit` passes  <!-- fp: llm-d/llm-d-router:issue:drop-deprecated-uds-tokenizer-kvcache-dep -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2361
 
 ## Bugs
 
@@ -45,6 +52,14 @@ last_updated: 2026-07-25
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/sidecar/proxy/proxy.go#L333
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/sidecar/proxy/data_parallel.go#L23
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/sidecar/proxy/data_parallel.go#L50
+- **CostAwareMemoryIndex and the Index interface have no Close/release, leaking Ristretto + LRU resources and OOMing CI** · Medium · Confirmed — Add `Close() error` (or `io.Closer`) to the `Index` interface, implement on every backend (Ristretto `cache.Close()`), register `t.Cleanup` in `createCostAwareIndexForTesting`, and use a small `NumCounters` in tests  <!-- fp: llm-d/llm-d-router:bug:costaware-index-no-close -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2349
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/kvcache/kvblock/cost_aware_memory.go#L53-L92
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/kvcache/kvblock/index.go
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/kvcache/kvblock/cost_aware_memory_test.go#L31-L37
+- **rewriteModelName does an unscoped global byte-replace per streaming chunk (split-field misses, content corruption)** · Low · Likely — Carry the last `len("\"model\":\"\"")+len(targetModel)` bytes across chunks so split fields still match, and scope the replacement to JSON token boundaries instead of a literal `ReplaceAll`  <!-- fp: llm-d/llm-d-router:bug:rewrite-model-name-global-replace -->
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/handlers/server.go#L538-L541
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/handlers/server.go#L627-L641
 
 ## Performance
 
@@ -52,6 +67,9 @@ last_updated: 2026-07-25
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/scheduling/scheduler_profile.go#L173
 - **DataProducer plugins run sequentially with 400ms per-producer timeout on the request path** · Medium · Likely — Fan out independent producers concurrently with shared deadline via errgroup; preserve ordering only where `Consumes()` declares dependency  <!-- fp: llm-d/llm-d-router:perf:sequential-dataproducer-plugins-400ms-timeout -->
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/requestcontrol/director.go#L395
+- **datalayer.Scope rebuilds the plugin's static allowedPut/allowedGet key sets per filter/scorer invocation per request** · Medium · Likely — Compute each plugin's `allowedPut`/`allowedGet` once at registration (or memoize on the plugin/ScopedEndpoint) and reuse the immutable maps across `Scope` calls  <!-- fp: llm-d/llm-d-router:perf:datalayer-scope-rebuilds-static-keymaps -->
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/datalayer/endpoint_scope.go#L189-L231
+  - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/scheduling/scheduler_profile.go
 
 ## Features & RFCs
 
