@@ -11,21 +11,24 @@ status: "active"
 ## Definition
 
 - [[01 - Experiment Definition|01 — Experiment Definition]] — problem statement, proposed end-state framework, and the four-phase path from reactive fetching to speculative prefetching.
-- [[02 - Phase 1 Naive Prefetch Implementation Guide|02 — Phase 1 Naive Prefetch Implementation Guide]] — step-by-step implementation of the toy N-chunk read-ahead prefetcher in `vllm/v1/kv_offload`, grounded in the vLLM `main` codebase.
-- [[03 - Phase 2 Heuristic Prefetch Implementation Guide|03 — Phase 2 Heuristic Prefetch Implementation Guide (tentative)]] — adaptive N controller, feature-based block selection, and sliding-window group support; tentative pending Phase 1 sweep results.
+- [[02 - Phase 1 Naive Prefetch Implementation Guide|02 — Phase 1 Naive Prefetch Implementation Guide (historical)]] — original post-miss N-chunk read-ahead design; its Phase 1 policy was rejected by the NVMe validation and is superseded by guide 04.
+- [[03 - Phase 2 Heuristic Prefetch Implementation Guide|03 — Phase 2 Heuristic Prefetch Implementation Guide (tentative)]] — adaptive N controller, feature-based block selection, and sliding-window group support; tentative pending Phase 1 proof.
+- [[04 - Phase 1 Queued-Request Oracle Prefetch Implementation Guide|04 — Phase 1 Queued-Request Oracle Prefetch Implementation Guide]] — implementation-ready design for blind first-N promotion at request admission, with request-level warm-up gating, direct NVMe→CPU loads, failure attribution, and tests.
 
 ## Reports
 
 - [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report|2026-08-10 — Nemotron no-offload versus CPU-offload KV lookup report]]
 - [[2026-08-14 - Phase 1 CPU prefetch validation|2026-08-14 — Phase 1 CPU prefetch validation]] — rejected Phase 1 batch: `prefetch_chunks=100` was enabled but every attempted chunk was skipped because no secondary tier was configured.
 - [[2026-08-14 - Phase 1 NVMe prefetch validation|2026-08-14 — Phase 1 NVMe prefetch validation]] — mechanism diagnosis with an active NVMe tier: demand lookup worked, but every post-miss prefetch candidate was skipped.
-- [[2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — proposed blind first-N queued-request experiment to isolate the performance value of correctly timed NVMe→CPU promotion.
+- [[2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — blind first-N queued-request experiment to isolate the performance value of correctly timed NVMe→CPU promotion.
 
 ## Current conclusion
 
-Phase 1 remains open. The CPU-only batch first showed that the hook and counters executed without a secondary tier. The controlled NVMe pair now shows the deeper problem: the secondary tier and reactive NVMe lookup were active, but attempted and skipped prefetch rates were identical at every native 15-second sample, with no promoted/useful/wasted series.
+The original Phase 1 post-miss read-ahead policy is closed as rejected. vLLM hashes are prefix-chained and the filesystem tier is append-like, so a stored later chunk normally implies its predecessor was also stored. Selecting later keys after a resolved terminal miss therefore produces candidates that are normally absent. The old helper also collapses an asynchronous filesystem `RETRY` into a generic skip, but correcting that state alone would not rescue the candidate policy.
 
-Code inspection confirms the root cause. vLLM hashes are prefix-chained and the filesystem tier is append-like, so a stored later chunk implies its predecessor was also stored. The hook runs only after a resolved terminal miss and selects later keys; under normal operation, that candidate set is necessarily absent. The prefetch helper also collapses asynchronous secondary-tier `RETRY` into a generic skip. No latency difference is attributable to prefetch, and $N$ must not be tuned until the candidate source and deferred lookup handling are redesigned.
+Phase 1 now means the queued-request oracle proof of concept in guide 04. The new path will build the first `N` keys at request admission, bypass secondary membership lookup, and directly submit assumed-resident NVMe→CPU promotions while the request waits. The benchmark controls residency by construction and uses `kv_transfer_params.abc_admission_prefetch` to disable prefetch during NVMe population and enable it only for measured requests.
+
+The old scheduler hook, `_try_promote()`, and its membership-driven `prefetch()` contract should be removed. The underlying CPU reservation, batched secondary load, completion, reactive fallback, and outcome metrics remain required and should be retained.
 
 ## MLflow run registry
 
@@ -37,6 +40,13 @@ Code inspection confirms the root cause. vLLM hashes are prefix-chained and the 
 
 ## Next experiment
 
-Implement the queued-request oracle PoC: pre-warm target prefixes on persistent NVMe, restart with cold GPU/CPU caches, and blindly promote the first `N=100` keys of a marked waiting request while a cover request occupies the GPU. The experimental path should bypass secondary membership lookup and treat the warmed tier as authoritative, while reporting load failures as oracle violations.
+Implement guide 04 on `experimental/naive-proactive-prefetching`:
 
-Compare at least five paired `N=0` and `N=100` repetitions. Accept the mechanism only with real `1:fs` promotions, a useful/promoted ratio of at least 0.9, and prefetch completion before target demand. Then evaluate paired target TTFT and aggregate pipeline throughput.
+1. replace `prefetch_chunks` with `admission_prefetch_chunks`;
+2. delete the post-miss scheduler hook and membership-probing Phase 1 helper;
+3. add the request-gated, assumed-resident admission path from secondary tier 0;
+4. add oracle-failure and late-prefetch metrics;
+5. mark measured GuideLLM requests and explicitly leave pre-warmup unmarked;
+6. compare at least five paired `N=0` and `N=100` repetitions.
+
+Accept the mechanism only with real `1:fs` promotions, zero oracle-load failures, a useful/effective-promoted ratio of at least 0.9, and prefetch completion before target demand for most eligible blocks. Then evaluate paired target TTFT and aggregate pipeline throughput.
