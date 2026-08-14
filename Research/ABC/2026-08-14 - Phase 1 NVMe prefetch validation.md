@@ -5,6 +5,7 @@ type: "research-report"
 experiment: "Activity-Based KV Cache Tier Placement"
 phase: "1 — naive proactive prefetching"
 status: "invalid-inconclusive"
+root_cause_status: "confirmed from code and telemetry"
 model: "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1-FP8"
 model_revision: "unknown"
 image: "quay.io/rh-ee-aperdomo/vllm:v0.27.0-prefetch-p1"
@@ -45,7 +46,7 @@ This pair is valid for diagnosing the mechanism but invalid for attributing late
 - **Measured:** both manifests contain the same filesystem secondary tier, 64 read threads, 64 write threads, a 256 GiB CPU primary tier, TP=8, and otherwise matching benchmark settings.
 - **Measured:** reactive NVMe lookup was active. External-prefix hits were about 27%, async tiering stalls occurred at about 0.74 events/s, and the active NVMe device sustained reads and writes in both cells.
 - **Measured:** `prefetch_chunks=100` loaded and the scheduler hook fired, but every selected candidate was skipped. No promoted/useful/wasted telemetry appeared.
-- **Inference:** the failure is candidate selection, not the absence of a secondary tier. The Phase 1 hook runs on the first `MISS` and submits `keys[local_idx + 1 : local_idx + 1 + N]`. In this workload, none of those later prefix keys existed in a secondary tier at the time of selection. Ordinary reactive hits happened earlier in the prefix scan; the hook fires only after the scan reaches its terminal miss.
+- **Code-confirmed root cause:** the hook runs only on the first terminal `MISS` and submits `keys[local_idx + 1 : local_idx + 1 + N]`. vLLM block hashes are chained through the entire preceding prefix, while the filesystem tier persistently stores every successfully cascaded chunk. Consequently, if a later key had been stored, its predecessor must also have been stored. A genuine miss at chunk $i$ therefore implies that chunks $i+1, \ldots, i+N$ are unavailable under normal operation.
 - **Conclusion:** changing $N$ alone cannot repair the mechanism. The trigger/candidate construction must change before an $N$ sweep is meaningful.
 
 ## Headline outcomes
@@ -1696,11 +1697,74 @@ The secondary tier was not merely configured; demand traffic reached it.
 
 The prefetch run also exported zero-valued series for an unrelated NVMe device on another node. The table uses only the active benchmark node/device, avoiding the misleading average across active and zero-valued series.
 
-## Root-cause interpretation
+## Code-confirmed root cause
 
-The current Phase 1 design performs a maximal-prefix scan. It reacts to secondary hits encountered during that scan. When it reaches the first full miss, it breaks the scan and invokes the toy hook on the next $N$ keys.
+The failure is structural, not an unlucky choice of $N$.
 
-The NVMe pair demonstrates that these are not useful prefetch candidates for this workload: all 153 attempted-rate samples equal the skipped-rate samples, while reactive secondary lookup remains active. Therefore the first-miss trigger is downstream of the reusable portion of the prefix. Later cumulative prefix keys generally have not been materialized for the request's unmatched continuation, or are not resident after independent eviction. Either way, the secondary-membership test rejects every one observed here.
+### 1. The hook is downstream of a terminal prefix miss
+
+In `OffloadingConnectorScheduler._maximal_prefix_lookup()`, demand lookup walks keys in prefix order. On `HIT` it advances; on `RETRY` it continues probing so the asynchronous backend can resolve the batch; only a resolved `MISS` enters the Phase 1 hook. The hook then passes the *later* keys to prefetch:
+
+```python
+case LookupResult.MISS:
+    upcoming = keys[local_idx + 1 : local_idx + 1 + n]
+    prefetch(upcoming, req_context)
+    break
+```
+
+### 2. Later keys are chained to the missing prefix
+
+`hash_block_tokens()` computes each block hash from the parent block hash plus the current tokens. Thus key $K_{i+1}$ identifies the whole prefix through block $i+1$ and cannot be produced independently of $K_i$:
+
+$
+K_{i+1} = H(K_i,\; \text{tokens}_{i+1},\; \text{extra keys}).
+$
+
+The offloading connector uses these chained request hashes as filesystem keys.
+
+### 3. The filesystem tier preserves the prefix-store invariant
+
+Successful GPU→CPU stores are cascaded to every secondary tier. The filesystem store is append-like: it writes a missing destination atomically and leaves an existing file in place. There is no normal filesystem-tier LRU deletion. Therefore, under successful normal stores:
+
+$
+K_{i+1} \in \text{NVMe} \Longrightarrow K_i \in \text{NVMe}.
+$
+
+Taking the contrapositive:
+
+$
+K_i \notin \text{NVMe} \Longrightarrow K_{i+1},K_{i+2},\ldots \notin \text{NVMe}.
+$
+
+That is exactly where the hook runs. It asks NVMe for keys that a genuine terminal miss has already proven cannot form a stored continuation. This explains the observed 100% skipped fraction.
+
+### 4. The metric label rules out CPU capacity as the cause
+
+`prefetch()` records a failed promotion with the concrete tier label (for this run, `1:fs`) when the key exists in NVMe but the CPU primary tier cannot allocate space. It uses the generic `prefetch` label when `_try_promote()` returns no tier. Every exported skip used the generic label, so the run did not reach the “NVMe hit, CPU full” branch.
+
+Reactive NVMe activity is compatible with this diagnosis: ordinary lookup found reusable chunks *before* the terminal miss. Those hits were already promoted by the demand path. Phase 1 only examined chunks *after* that boundary.
+
+### Secondary implementation defect: asynchronous RETRY is also collapsed into skipped
+
+`_try_promote()` recognizes only a secondary `HIT`. A filesystem `RETRY`—the normal first response while its asynchronous existence check is pending—falls through to `(False, None)` and is counted as a generic skip. `prefetch()` has no deferred retry state.
+
+This defect can falsely classify a real key as skipped if it was not already probed by the demand scan. It is not required to explain this experiment because the first-miss/prefix invariant already makes the selected continuation unavailable, but it must be fixed before reusing `prefetch()` with any genuinely speculative candidate source.
+
+### Why unit tests did not expose it
+
+The manager tests manually insert arbitrary independent keys into a mock secondary tier and call `manager.prefetch()` directly. That proves promotion and accounting after a known secondary hit, but it bypasses chained prefix hashes and the scheduler's terminal-miss trigger.
+
+The scheduler lookup tests mock `OffloadingManager`, which has no `prefetch` API, and do not assert an end-to-end post-miss promotion. There is therefore no test representing the production invariant: an append-only secondary tier populated from chained request prefixes.
+
+## Corrective direction
+
+The same-request “next $N$ keys after first miss” algorithm should be retired for the filesystem tier. Merely moving the hook a few lines or changing $N$ is insufficient:
+
+- Existing secondary hits in the current request are already discovered and promoted by the normal maximal-prefix demand scan.
+- Keys after the first genuine miss are not stored continuations.
+- Useful speculative work must come from information outside that terminal scan—for example a predicted future request/turn, a trajectory/session association, or a secondary-tier index that proposes keys known to exist.
+
+Any replacement should also make prefetch asynchronous: distinguish `HIT`, `MISS`, and `RETRY`; retain pending candidates across scheduler steps; and count `skipped` only after a resolved miss or explicit policy rejection.
 
 ## Recommendation
 
@@ -1708,8 +1772,8 @@ Do **not** sweep or optimize `prefetch_blocks` yet. No numeric value can compens
 
 For the next code-validation run:
 
-1. Move candidate discovery earlier in the prefix scan, or batch/promote upcoming keys that are positively known to exist in the secondary tier before reaching the terminal miss.
-2. Preserve `prefetch_chunks=100` (or `prefetch_blocks=100` if the deployment wrapper maps one block to one offload chunk) as a high-signal plumbing value. It is a validation setting, not an optimum.
+1. Replace post-miss same-request read-ahead with a candidate source that proposes keys already known to exist in the secondary tier, preferably from a predicted future request/turn or trajectory/session relationship.
+2. Add deferred handling for asynchronous secondary-tier `RETRY` results before counting a candidate as skipped. Preserve `prefetch_chunks=100` only as a high-signal plumbing value for the redesigned source; it is not an optimum.
 3. Require `promoted > 0`, `useful + wasted > 0`, and a skip fraction below 100% before comparing latency.
 4. Once the mechanism gate passes, run repeated paired cells for $N \in \{0, 32, 64, 100, 128, 256\}$ and choose the smallest value near the latency minimum with a strong useful ratio and no occupancy/allocation pressure.
 
