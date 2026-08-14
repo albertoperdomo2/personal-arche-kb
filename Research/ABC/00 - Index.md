@@ -19,6 +19,7 @@ status: "active"
 - [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report|2026-08-10 — Nemotron no-offload versus CPU-offload KV lookup report]]
 - [[2026-08-14 - Phase 1 CPU prefetch validation|2026-08-14 — Phase 1 CPU prefetch validation]] — rejected Phase 1 batch: `prefetch_chunks=100` was enabled but every attempted chunk was skipped because no secondary tier was configured.
 - [[2026-08-14 - Phase 1 NVMe prefetch validation|2026-08-14 — Phase 1 NVMe prefetch validation]] — mechanism diagnosis with an active NVMe tier: demand lookup worked, but every post-miss prefetch candidate was skipped.
+- [[2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — proposed blind first-N queued-request experiment to isolate the performance value of correctly timed NVMe→CPU promotion.
 
 ## Current conclusion
 
@@ -36,4 +37,6 @@ Code inspection confirms the root cause. vLLM hashes are prefix-chained and the 
 
 ## Next experiment
 
-Replace the post-miss same-request candidate construction with a source that proposes keys positively known to exist in the secondary tier—such as predicted future request/turn or trajectory/session keys—and make prefetch retain asynchronous `RETRY` candidates across steps. Keep `prefetch_chunks=100` for the first post-fix plumbing validation to maximize signal while isolating the code change. Require nonzero promoted and resolved useful/wasted samples before comparing latency. Only after that gate passes, run at least three paired repetitions across `N ∈ {0, 32, 64, 100, 128, 256}`.
+Implement the queued-request oracle PoC: pre-warm target prefixes on persistent NVMe, restart with cold GPU/CPU caches, and blindly promote the first `N=100` keys of a marked waiting request while a cover request occupies the GPU. The experimental path should bypass secondary membership lookup and treat the warmed tier as authoritative, while reporting load failures as oracle violations.
+
+Compare at least five paired `N=0` and `N=100` repetitions. Accept the mechanism only with real `1:fs` promotions, a useful/promoted ratio of at least 0.9, and prefetch completion before target demand. Then evaluate paired target TTFT and aggregate pipeline throughput.
