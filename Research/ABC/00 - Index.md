@@ -24,7 +24,7 @@ status: "active"
 
 Phase 1 remains open. The CPU-only batch first showed that the hook and counters executed without a secondary tier. The controlled NVMe pair now shows the deeper problem: the secondary tier and reactive NVMe lookup were active, but attempted and skipped prefetch rates were identical at every native 15-second sample, with no promoted/useful/wasted series.
 
-The first-miss hook selects later cumulative prefix keys after the reactive scan has reached its terminal miss. In the observed workload, none of those candidates existed in the secondary tier. No latency difference is attributable to prefetch, and $N$ must not be tuned until candidate discovery produces real promotions.
+Code inspection confirms the root cause. vLLM hashes are prefix-chained and the filesystem tier is append-like, so a stored later chunk implies its predecessor was also stored. The hook runs only after a resolved terminal miss and selects later keys; under normal operation, that candidate set is necessarily absent. The prefetch helper also collapses asynchronous secondary-tier `RETRY` into a generic skip. No latency difference is attributable to prefetch, and $N$ must not be tuned until the candidate source and deferred lookup handling are redesigned.
 
 ## MLflow run registry
 
@@ -36,4 +36,4 @@ The first-miss hook selects later cumulative prefix keys after the reactive scan
 
 ## Next experiment
 
-Correct the Phase 1 trigger/candidate construction so it discovers keys positively known to exist in the secondary tier before the terminal prefix miss. Keep `prefetch_chunks=100` for the first post-fix plumbing validation to maximize signal while isolating the code change. Require nonzero promoted and resolved useful/wasted samples before comparing latency. Only after that gate passes, run at least three paired repetitions across `N ∈ {0, 32, 64, 100, 128, 256}`.
+Replace the post-miss same-request candidate construction with a source that proposes keys positively known to exist in the secondary tier—such as predicted future request/turn or trajectory/session keys—and make prefetch retain asynchronous `RETRY` candidates across steps. Keep `prefetch_chunks=100` for the first post-fix plumbing validation to maximize signal while isolating the code change. Require nonzero promoted and resolved useful/wasted samples before comparing latency. Only after that gate passes, run at least three paired repetitions across `N ∈ {0, 32, 64, 100, 128, 256}`.
