@@ -122,25 +122,27 @@ correctness fallback: existing reactive lookup path
 
 ## 5. Repository map and current line anchors
 
-| Responsibility | Repository path | Current anchor |
-|---|---|---:|
-| Metric names and transfer job shape | `vllm/v1/kv_offload/tiering/base.py` | `TieringOffloadingMetrics`, lines 37–48; `JobMetadata`, lines 51–59 |
-| Manager state | `vllm/v1/kv_offload/tiering/manager.py` | `PendingPromotion`, lines 66–72; `TieringOffloadingManager.__init__`, lines 183–243 |
-| Async completion | `vllm/v1/kv_offload/tiering/manager.py` | `_process_finished_jobs`, lines 264–297 |
-| Retained outcome tracking | `vllm/v1/kv_offload/tiering/manager.py` | `_track_prefetched`, lines 302–334; `_observe_prefetch_outcome`, lines 336–362 |
-| Reactive demand lookup | `vllm/v1/kv_offload/tiering/manager.py` | `lookup`, lines 364–435 |
-| CPU reservation and batching | `vllm/v1/kv_offload/tiering/manager.py` | `_initiate_promotion`, lines 465–512; `_flush_pending_promotions`, lines 514–536 |
-| End-of-step flush | `vllm/v1/kv_offload/tiering/manager.py` | `on_schedule_end`, especially lines 820–834 |
-| Configuration and metric definitions | `vllm/v1/kv_offload/tiering/spec.py` | metrics lines 136–199; config lines 211–230; manager construction lines 298–302 |
-| KV group shape | `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | `GroupOffloadConfig`, lines 85–104 |
-| Key derivation | same scheduler file | `RequestOffloadState.update_offload_keys`, lines 312–326 |
-| Request parameter propagation | same scheduler file | `_create_req_context`, lines 431–442 |
-| Demand prefix lookup (leave unchanged) | same scheduler file | `_maximal_prefix_lookup`, lines 545–577 |
-| Admission hook | same scheduler file | `on_new_request`, lines 804–814 |
-| OpenAI request field already available | `vllm/entrypoints/openai/chat_completion/protocol.py` | field lines 465–468; propagation lines 690–693 |
-| Manager tests | `tests/v1/kv_offload/tiering/test_tiering_offloading.py` | fixture lines 254–293; promotion tests from line 422; retained accounting tests from line 447 |
-| Scheduler lookup tests | `tests/v1/kv_connector/unit/offloading_connector/test_scheduler.py` | focused lookup section from line 1060 |
-| Filesystem batching | `vllm/v1/kv_offload/tiering/fs/manager.py` | `submit_load`, lines 221–231; completion lines 234–252 |
+
+| Responsibility                         | Repository path                                                        | Current anchor                                                                                |
+| -------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Metric names and transfer job shape    | `vllm/v1/kv_offload/tiering/base.py`                                   | `TieringOffloadingMetrics`, lines 37–48; `JobMetadata`, lines 51–59                           |
+| Manager state                          | `vllm/v1/kv_offload/tiering/manager.py`                                | `PendingPromotion`, lines 66–72; `TieringOffloadingManager.__init__`, lines 183–243           |
+| Async completion                       | `vllm/v1/kv_offload/tiering/manager.py`                                | `_process_finished_jobs`, lines 264–297                                                       |
+| Retained outcome tracking              | `vllm/v1/kv_offload/tiering/manager.py`                                | `_track_prefetched`, lines 302–334; `_observe_prefetch_outcome`, lines 336–362                |
+| Reactive demand lookup                 | `vllm/v1/kv_offload/tiering/manager.py`                                | `lookup`, lines 364–435                                                                       |
+| CPU reservation and batching           | `vllm/v1/kv_offload/tiering/manager.py`                                | `_initiate_promotion`, lines 465–512; `_flush_pending_promotions`, lines 514–536              |
+| End-of-step flush                      | `vllm/v1/kv_offload/tiering/manager.py`                                | `on_schedule_end`, especially lines 820–834                                                   |
+| Configuration and metric definitions   | `vllm/v1/kv_offload/tiering/spec.py`                                   | metrics lines 136–199; config lines 211–230; manager construction lines 298–302               |
+| KV group shape                         | `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | `GroupOffloadConfig`, lines 85–104                                                            |
+| Key derivation                         | same scheduler file                                                    | `RequestOffloadState.update_offload_keys`, lines 312–326                                      |
+| Request parameter propagation          | same scheduler file                                                    | `_create_req_context`, lines 431–442                                                          |
+| Demand prefix lookup (leave unchanged) | same scheduler file                                                    | `_maximal_prefix_lookup`, lines 545–577                                                       |
+| Admission hook                         | same scheduler file                                                    | `on_new_request`, lines 804–814                                                               |
+| OpenAI request field already available | `vllm/entrypoints/openai/chat_completion/protocol.py`                  | field lines 465–468; propagation lines 690–693                                                |
+| Manager tests                          | `tests/v1/kv_offload/tiering/test_tiering_offloading.py`               | fixture lines 254–293; promotion tests from line 422; retained accounting tests from line 447 |
+| Scheduler lookup tests                 | `tests/v1/kv_connector/unit/offloading_connector/test_scheduler.py`    | focused lookup section from line 1060                                                         |
+| Filesystem batching                    | `vllm/v1/kv_offload/tiering/fs/manager.py`                             | `submit_load`, lines 221–231; completion lines 234–252                                        |
+
 
 Read these anchors before writing code. In particular, trace `_initiate_promotion()` through `_flush_pending_promotions()` and `_process_finished_jobs()` until you can explain why CPU blocks are `HIT_PENDING` before I/O completion.
 
@@ -338,13 +340,15 @@ Current insertion anchor: after `_tier_label()` at lines 299–300 and before `_
 
 Its contract is deliberately different from reactive `lookup()`:
 
-| Question | Reactive `lookup()` | `prefetch_assume_resident()` |
-|---|---|---|
-| Who selects the key? | Demand prefix scan | Admission policy |
-| Check CPU? | Yes | Yes |
-| Check NVMe membership? | Yes | **No** |
-| On assumed source absence | `MISS` | Async job failure/oracle violation |
-| Correctness role | Required | Best-effort optimization |
+
+| Question                  | Reactive `lookup()` | `prefetch_assume_resident()`       |
+| ------------------------- | ------------------- | ---------------------------------- |
+| Who selects the key?      | Demand prefix scan  | Admission policy                   |
+| Check CPU?                | Yes                 | Yes                                |
+| Check NVMe membership?    | Yes                 | **No**                             |
+| On assumed source absence | `MISS`              | Async job failure/oracle violation |
+| Correctness role          | Required            | Best-effort optimization           |
+
 
 ### 2.2 Implement the decision loop
 
@@ -1079,10 +1083,12 @@ For the controlled PoC, every attempt has a known source tier. Expect `tier="1:f
 
 Start with:
 
-| Cell | Request flag | `admission_prefetch_chunks` | Purpose |
-|---|---:|---:|---|
-| Control | true | 0 | Same request body, proactive work disabled server-side |
-| Treatment | true | 100 | Blind first-100 admission prefetch |
+
+| Cell      | Request flag | `admission_prefetch_chunks` | Purpose                                                |
+| --------- | ------------ | --------------------------- | ------------------------------------------------------ |
+| Control   | true         | 0                           | Same request body, proactive work disabled server-side |
+| Treatment | true         | 100                         | Blind first-100 admission prefetch                     |
+
 
 Warm-up sends the request flag as `false` in both cells.
 
