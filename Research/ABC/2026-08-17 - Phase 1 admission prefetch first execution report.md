@@ -178,6 +178,27 @@ Phase 1 remains open. The benchmark and observability design are largely usable,
 8. Pin both cells to the same model node when possible; otherwise randomize/interleave cell order and balance repetitions by node. Record actual GPU SKU and NVMe device identity rather than relying on the current tag.
 9. Do not tune N yet. Once the N=100 mechanism and performance gates pass, sweep `N ∈ {25, 50, 100, 200}`.
 
+## Post-analysis repair checkpoint — 2026-08-17
+
+The configuration-wiring defect is fixed in the local vLLM working tree, without a commit:
+
+- `TieringOffloadingManager` now exposes a read-only `admission_prefetch_chunks` property backed by `_admission_prefetch_chunks`;
+- the existing manager configuration test now asserts the public interface;
+- a scheduler regression test uses a real `TieringOffloadingManager` and proves that configured `N=100` passes the first 100 ordered request keys to `prefetch_assume_resident()`;
+- `Containerfile.vllm-prefetch` now fails its overlay verification if the copied manager lacks the public property.
+
+Validation completed:
+
+```text
+69 passed — tests/v1/kv_offload/tiering/test_tiering_offloading.py
+41 passed — TestAdmissionPrefetch + TestMaximalPrefixLookup + TestSlidingWindowLookup
+ruff format --check: 3 files already formatted
+ruff check: all checks passed
+git diff --check: passed
+```
+
+The broader scheduler file's network-sensitive fixtures exceeded the available execution window after requiring Hugging Face metadata; the focused scheduler sections covering this change completed successfully. No image has yet been rebuilt from the repaired working tree. The next checkpoint is a new immutable image digest followed by the 8–16 request live mechanism smoke test.
+
 ## Data provenance and limitations
 
 Client aggregates and per-request values come from each run’s `results/benchmark_output.json`. Mechanism, queue, transfer, and storage series come from the archived Prometheus artifacts at their native 15-second cadence and are restricted—not resampled—to each measured-phase interval. Model logs, rendered run plans, pod manifests, and pod descriptions establish arguments, image digests, placement, and JIT warnings.
