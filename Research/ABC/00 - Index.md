@@ -29,7 +29,7 @@ The original Phase 1 post-miss read-ahead policy remains closed as rejected. vLL
 
 Phase 1 now means the queued-request oracle proof of concept in guide 04: build the first `N` keys at request admission, bypass secondary membership lookup, and directly submit assumed-resident NVMe→CPU promotions while the request waits. The benchmark controls residency by construction and uses `kv_transfer_params.abc_admission_prefetch` to disable prefetch during NVMe population and enable it only for measured requests.
 
-The first live execution on 2026-08-17 did **not** exercise that mechanism. The manager stored the parsed value as `_admission_prefetch_chunks`, while the scheduler read `manager.admission_prefetch_chunks` with a zero fallback. All nine prefetch metric queries were empty in the N=100 cell. The performance result is therefore invalid/inconclusive for proactive prefetch; the slower treatment aggregate is run variability between effectively non-prefetching cells.
+The first live execution on 2026-08-17 did **not** exercise that mechanism. The manager stored the parsed value as `_admission_prefetch_chunks`, while the scheduler read `manager.admission_prefetch_chunks` with a zero fallback. All nine prefetch metric queries were empty in the N=100 cell. The performance result is therefore invalid/inconclusive for proactive prefetch; the slower treatment aggregate is run variability between effectively non-prefetching cells. The local vLLM working tree now exposes a read-only manager property matching the scheduler contract, has a real-manager scheduler regression test, and passes the focused tiering and admission/lookup suites. No corrected image or live mechanism result exists yet.
 
 The deployment and workload scaffolding otherwise worked: all three cells completed 256/256 requests without errors, both custom cells used the same immutable image digest, warm-up sent the request gate as false and measurement as true, the server rendered N=0 versus N=100 correctly, one sequence ran with roughly 6–7 waiting, and normal reactive NVMe offload remained active.
 
@@ -46,14 +46,12 @@ The deployment and workload scaffolding otherwise worked: all three cells comple
 
 ## Next experiment
 
-Repair and prove real configuration wiring before another full benchmark:
+The manager/scheduler wiring repair and regression tests are complete in the uncommitted local working tree. Before another full benchmark:
 
-1. expose a read-only `TieringOffloadingManager.admission_prefetch_chunks` property returning the private field;
-2. add a real spec→manager→scheduler regression test so a mocked public field cannot hide the mismatch;
-3. rebuild under a new immutable image tag/digest;
-4. run an 8–16 request live smoke test and require nonzero `attempted{tier="1:fs"}`, the attempted partition identity, zero load failures, and no old aggregate `tier="prefetch"` label;
-5. eliminate measured-phase `_swap_blocks_kernel` JIT;
-6. verify the actual accelerator SKU and pin or balance node placement;
-7. only then compare at least five paired custom-image N=0 and N=100 repetitions with measured request flag true and warm-up flag false in both cells.
+1. rebuild under a new immutable image tag/digest;
+2. run an 8–16 request live smoke test and require nonzero `attempted{tier="1:fs"}`, the attempted partition identity, zero load failures, and no old aggregate `tier="prefetch"` label;
+3. eliminate measured-phase `_swap_blocks_kernel` JIT;
+4. verify the actual accelerator SKU and pin or balance node placement;
+5. only then compare at least five paired custom-image N=0 and N=100 repetitions with measured request flag true and warm-up flag false in both cells.
 
 Accept the mechanism only with real `1:fs` promotions, zero oracle-load failures, useful/effective-promoted of at least 0.9, and completion before target demand for most eligible blocks. Then evaluate paired target TTFT and aggregate pipeline throughput.
