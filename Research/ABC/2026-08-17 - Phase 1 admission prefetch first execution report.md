@@ -127,7 +127,8 @@ This similarity is consistent with all three cells running the normal reactive p
 
 Native evidence is preserved in:
 
-- [[2026-08-17 - Phase 1 admission prefetch first execution report/Request latency comparison]]
+- [[2026-08-17 - Phase 1 admission prefetch first execution report/Request TTFT comparison]]
+- [[2026-08-17 - Phase 1 admission prefetch first execution report/Request E2E latency comparison]]
 - [[2026-08-17 - Phase 1 admission prefetch first execution report/Offload and storage telemetry comparison]]
 
 ## What went well
