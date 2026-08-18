@@ -8,7 +8,7 @@ source_report: 2026-08-18 - AgentX Weka admission prefetch first exploratory run
 
 # AgentX Weka TTFT p99 comparison
 
-Return to [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|scheduler and latency appendix index]].
+Return to [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|scheduler and latency appendix index]].
 
 This chart preserves every archived Prometheus 15-second rolling histogram-quantile sample in each profiling window.
 
