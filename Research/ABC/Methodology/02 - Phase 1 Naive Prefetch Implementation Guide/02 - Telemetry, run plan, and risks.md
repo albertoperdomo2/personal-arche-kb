@@ -94,7 +94,7 @@ The sweep must span three regimes relative to **K**, the typical number of chunk
 | Too large  | $N \gg K$     | read-ahead overshoots the fetch, spending CPU-tier capacity and transfer bandwidth on blocks the request will not reach before they are evicted under 32-way concurrency → regression |
 
 
-**Estimating K from the workload.** A large main-turn request carries ~700–815 blocks of prefix (45–52k tokens). Under 32-way concurrency with a 64 GiB CPU tier and ~93% reuse, the fraction evicted from CPU but resident in secondary between turns is the fetch length. The Phase 0 baseline ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured a stall rate of ~587–591 events/s over 1,800 s (~1.06 M lookup events); dividing by the completed-request count yields the empirical K. **Measure K from the Phase 0 run** (`BLOCK_QUERIES` / completed requests, or more precisely, secondary-`HIT` promotions per request) and center the sweep on it. Until that measurement is in, the prefix-size distribution above gives the bracket: K is bounded above by the large-request prefix (~700–815 blocks) and below by the per-turn delta (~7% of prefix ≈ 50–60 blocks).
+**Estimating K from the workload.** A large main-turn request carries ~700–815 blocks of prefix (45–52k tokens). Under 32-way concurrency with a 64 GiB CPU tier and ~93% reuse, the fraction evicted from CPU but resident in secondary between turns is the fetch length. The Phase 0 baseline ([[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured a stall rate of ~587–591 events/s over 1,800 s (~1.06 M lookup events); dividing by the completed-request count yields the empirical K. **Measure K from the Phase 0 run** (`BLOCK_QUERIES` / completed requests, or more precisely, secondary-`HIT` promotions per request) and center the sweep on it. Until that measurement is in, the prefix-size distribution above gives the bracket: K is bounded above by the large-request prefix (~700–815 blocks) and below by the per-turn delta (~7% of prefix ≈ 50–60 blocks).
 
 #### Proposed sweep
 
@@ -184,11 +184,11 @@ The hit rate and latency curves should move together until the eviction threshol
 
 ## 5. Run plan and exit criteria
 
-This maps directly to Phase 1 of [[01 - Experiment Definition]].
+This maps directly to Phase 1 of [[Methodology/01 - Experiment Definition]].
 
 1. **Implement** Steps 1–4 on a vLLM fork/branch; keep `N = 0` path identical to `main`.
 2. **Unit-test** `_try_promote` and `prefetch` with a mock primary tier and a mock `SecondaryTierManager`: assert no double-promotion, primary-full tolerance, filter honored, `N = 0` no-op.
-3. **Measure K from Phase 0.** From the existing Nemotron baseline run ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]), compute the empirical secondary-fetch length per large request: secondary-`HIT` promotions per completed request, or `BLOCK_QUERIES` / completed requests. This anchors the sweep's sweet-spot expectation (Section 4.3).
+3. **Measure K from Phase 0.** From the existing Nemotron baseline run ([[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]), compute the empirical secondary-fetch length per large request: secondary-`HIT` promotions per completed request, or `BLOCK_QUERIES` / completed requests. This anchors the sweep's sweet-spot expectation (Section 4.3).
 4. **Deploy** the branch image to the PSAP cluster; record the full image digest (per [[Experiment Methodology]]).
 5. **Sweep** `prefetch_chunks ∈ {0, 4, 8, 16, 32, 64, 128, 256}`, 3 repetitions each, same batch, same node class, on the `cc-traces-weka-061526` workload (Section 4.0). `0` is the within-batch control.
 6. **Report** as a dated note under `Research/ABC/`: latency curves vs N, lookup-events-per-request vs N, prefetch hit rate vs N, negative-signal metrics, the measured K, and a **go/no-go decision**. The report should show the U-curve (Figure 2 shape), the hit rate curve alongside it, and identify the sweet-spot N where hit rate is high and latency is low.
@@ -204,7 +204,7 @@ This maps directly to Phase 1 of [[01 - Experiment Definition]].
 
 ## 7. Out of scope for Phase 1
 
-Explicitly **not** in this toy (deferred to later phases per [[01 - Experiment Definition]]):
+Explicitly **not** in this toy (deferred to later phases per [[Methodology/01 - Experiment Definition]]):
 
 - Any prediction model (XGBoost or otherwise) — Phase 3.
 - The cost-benefit migration gate $\text{Benefit} > N \times \text{Cost}$ — Phase 3.
@@ -216,8 +216,8 @@ Explicitly **not** in this toy (deferred to later phases per [[01 - Experiment D
 
 ## 8. Related
 
-- [[01 - Experiment Definition]] — Phase 1 objective, method, and exit criteria.
-- [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 baseline data and the lookup-delay numbers this toy targets.
+- [[Methodology/01 - Experiment Definition]] — Phase 1 objective, method, and exit criteria.
+- [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 baseline data and the lookup-delay numbers this toy targets.
 - [[AgentX Workload Definition]] — the agentic-replay workload family; the `061526` corpus used here is a tighter-filtered build of the same family.
 - [[Experiment Methodology]] — run structure, acceptance gates, repetition requirements.
 - [[Activity-Based KV Cache Offloading]] — concept note; the implementation-placement verdict (prediction + placement live in core vLLM `vllm/v1/kv_offload`; this guide follows that verdict).
