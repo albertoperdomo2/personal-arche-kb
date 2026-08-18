@@ -110,9 +110,9 @@ The first-100 policy mostly rediscovered CPU-resident prefix blocks. When it did
 
 Full native-cadence plots:
 
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Admission prefetch mechanism|Admission prefetch mechanism]]
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|Scheduler and latency comparison]]
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Storage and transfer comparison|Storage and transfer comparison]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Admission prefetch mechanism|Admission prefetch mechanism]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|Scheduler and latency comparison]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Storage and transfer comparison|Storage and transfer comparison]]
 
 ## Configuration and run registry
 
