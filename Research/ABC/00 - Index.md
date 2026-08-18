@@ -1,6 +1,6 @@
 ---
 title: "ABC KV lookup experiments"
-date: "2026-08-17"
+date: "2026-08-18"
 type: "research-index"
 experiment: "ABC CPU offload KV lookup comparison"
 status: "active"
@@ -31,6 +31,8 @@ Phase 1 now means the queued-request oracle proof of concept in guide 04: build 
 
 The first live execution on 2026-08-17 did **not** exercise that mechanism. The manager stored the parsed value as `_admission_prefetch_chunks`, while the scheduler read `manager.admission_prefetch_chunks` with a zero fallback. All nine prefetch metric queries were empty in the N=100 cell. The performance result is therefore invalid/inconclusive for proactive prefetch; the slower treatment aggregate is run variability between effectively non-prefetching cells. The local vLLM working tree now exposes a read-only manager property matching the scheduler contract, has a real-manager scheduler regression test, and passes the focused tiering and admission/lookup suites. No corrected image or live mechanism result exists yet.
 
+A repeat on 2026-08-18 also did **not** contain the repair: both nominal N=0 and N=100 pods resolved the old `v0.27.0-prefetch-p1` digest `32a580...`. The N=100 cell again had no prefetch series. Its apparent p95 TTFT improvement is non-evidence because no proactive work ran, only one repetition exists, the cells used different nodes, and the nominal control completed only 255/256 requests. No corrected image or live mechanism result exists yet.
+
 The deployment and workload scaffolding otherwise worked: all three cells completed 256/256 requests without errors, both custom cells used the same immutable image digest, warm-up sent the request gate as false and measurement as true, the server rendered N=0 versus N=100 correctly, one sequence ran with roughly 6–7 waiting, and normal reactive NVMe offload remained active.
 
 ## MLflow run registry
@@ -43,12 +45,14 @@ The deployment and workload scaffolding otherwise worked: all three cells comple
 - Admission-prefetch official-image control: [23b7f315a6a54c08b484b113037abccc](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/23b7f315a6a54c08b484b113037abccc?workspace=benchflow)
 - Admission-prefetch custom-image N=0 control: [3ee22e3ae07144039b83d9e6b8dfcbf0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/3ee22e3ae07144039b83d9e6b8dfcbf0?workspace=benchflow)
 - Admission-prefetch configured N=100 treatment (invalid; scheduler observed zero): [b6bce02143a0431baa9935731cbe8b23](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/b6bce02143a0431baa9935731cbe8b23?workspace=benchflow)
+- Repeat custom-image N=0 control (invalid; stale p1 image and only 255/256 completed): [048fa4300c4c4b878941f72395c1258e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/048fa4300c4c4b878941f72395c1258e?workspace=benchflow)
+- Repeat configured N=100 treatment (invalid; stale p1 image and no prefetch series): [eddf9874c8304cf79fe3231b722be21c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/eddf9874c8304cf79fe3231b722be21c?workspace=benchflow)
 
 ## Next experiment
 
 The manager/scheduler wiring repair and regression tests are complete in the uncommitted local working tree. Before another full benchmark:
 
-1. rebuild under a new immutable image tag/digest;
+1. rebuild under a new immutable image tag/digest, update the BenchFlow image reference, and verify the live pod `imageID` is not the old `32a580...` digest;
 2. run an 8–16 request live smoke test and require nonzero `attempted{tier="1:fs"}`, the attempted partition identity, zero load failures, and no old aggregate `tier="prefetch"` label;
 3. eliminate measured-phase `_swap_blocks_kernel` JIT;
 4. verify the actual accelerator SKU and pin or balance node placement;
