@@ -16,6 +16,10 @@ Definitions, experiment plans, implementation tutorials, and design discussions 
 - [[Methodology/05 - Initial versus Admission-Time Proactive Prefetching|05 — Initial versus Admission-Time Proactive Prefetching]] — concise explanation of how the current implementation works and why the original policy failed.
 - [[Methodology/2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Queued-request oracle prefetch plan]] — experimental plan that isolates proactive timing from candidate prediction.
 
+## Research synthesis
+
+- [[Methodology/06 - Deep Speculative Prefetching and Temperature Characterization|06 — Deep Speculative Prefetching and Temperature Characterization]] — literature synthesis motivating the event-driven temperature design.
+
 ## Implementation guides
 
 - [[Methodology/02 - Phase 1 Naive Prefetch Implementation Guide|02 — Phase 1 Naive Prefetch Implementation Guide (historical)]] — rejected post-miss same-request read-ahead implementation, retained in two linked parts.
