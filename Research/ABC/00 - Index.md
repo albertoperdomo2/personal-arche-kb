@@ -22,6 +22,7 @@ status: "active"
 - [[2026-08-14 - Phase 1 NVMe prefetch validation|2026-08-14 — Phase 1 NVMe prefetch validation]] — mechanism diagnosis with an active NVMe tier: demand lookup worked, but every post-miss prefetch candidate was skipped.
 - [[2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — blind first-N queued-request experiment to isolate the performance value of correctly timed NVMe→CPU promotion.
 - [[2026-08-17 - Phase 1 admission prefetch first execution report|2026-08-17 — Phase 1 admission prefetch first execution report]] — invalid/inconclusive first execution: N=100 was rendered, but a manager/scheduler attribute mismatch reduced the scheduler-visible limit to zero, so no proactive work ran. Includes native request, offload, queue, transfer, and NVMe evidence.
+- [[2026-08-18 - Phase 1 admission prefetch repaired-image validation|2026-08-18 — Phase 1 admission prefetch repaired-image validation]] — first successful mechanism execution: 25,344 NVMe→CPU promotions, 100% eventually useful, 92.97% ready at first demand, and no failures. Performance remains inconclusive because the control completed only 255/256 requests.
 
 ## Current conclusion
 
@@ -32,6 +33,8 @@ Phase 1 now means the queued-request oracle proof of concept in guide 04: build 
 The first live execution on 2026-08-17 did **not** exercise that mechanism. The manager stored the parsed value as `_admission_prefetch_chunks`, while the scheduler read `manager.admission_prefetch_chunks` with a zero fallback. All nine prefetch metric queries were empty in the N=100 cell. The performance result is therefore invalid/inconclusive for proactive prefetch; the slower treatment aggregate is run variability between effectively non-prefetching cells. The local vLLM working tree now exposes a read-only manager property matching the scheduler contract, has a real-manager scheduler regression test, and passes the focused tiering and admission/lookup suites. No corrected image or live mechanism result exists yet.
 
 A repeat on 2026-08-18 also did **not** contain the repair: both nominal N=0 and N=100 pods resolved the old `v0.27.0-prefetch-p1` digest `32a580...`. The N=100 cell again had no prefetch series. Its apparent p95 TTFT improvement is non-evidence because no proactive work ran, only one repetition exists, the cells used different nodes, and the nominal control completed only 255/256 requests. No corrected image or live mechanism result exists yet.
+
+The repaired-image execution later on 2026-08-18 **passed the Phase 1 mechanism proof**. Both cells used digest `097cffbd...`; N=100 attempted 25,600 blocks, promoted 25,344, classified 256 redundant, and eventually used all 25,344 promotions. Exactly 1,782 promotions (7.03%) were late at first demand, so 92.97% were ready in time. There were no skips, waste, tracking overflow, or load failures. The observed TTFT tail was better, but performance remains inconclusive because the N=0 control again completed only 255/256 requests, nodes differed, JIT occurred during measurement, and only one pair exists.
 
 The deployment and workload scaffolding otherwise worked: all three cells completed 256/256 requests without errors, both custom cells used the same immutable image digest, warm-up sent the request gate as false and measurement as true, the server rendered N=0 versus N=100 correctly, one sequence ran with roughly 6–7 waiting, and normal reactive NVMe offload remained active.
 
@@ -47,15 +50,17 @@ The deployment and workload scaffolding otherwise worked: all three cells comple
 - Admission-prefetch configured N=100 treatment (invalid; scheduler observed zero): [b6bce02143a0431baa9935731cbe8b23](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/b6bce02143a0431baa9935731cbe8b23?workspace=benchflow)
 - Repeat custom-image N=0 control (invalid; stale p1 image and only 255/256 completed): [048fa4300c4c4b878941f72395c1258e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/048fa4300c4c4b878941f72395c1258e?workspace=benchflow)
 - Repeat configured N=100 treatment (invalid; stale p1 image and no prefetch series): [eddf9874c8304cf79fe3231b722be21c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/eddf9874c8304cf79fe3231b722be21c?workspace=benchflow)
+- Repaired-image N=0 control (performance-invalid; 255/256 completed): [3581db3f82d7427c883ff72113390121](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/3581db3f82d7427c883ff72113390121?workspace=benchflow)
+- Repaired-image N=100 treatment (mechanism accepted; performance provisional): [b28bd1db0836406a94c31c2e3faa7c35](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/b28bd1db0836406a94c31c2e3faa7c35?workspace=benchflow)
 
 ## Next experiment
 
-The manager/scheduler wiring repair and regression tests are complete in the uncommitted local working tree. Before another full benchmark:
+The mechanism gate is now accepted on repaired digest `097cffbd...`. The next experiment is the performance proof:
 
-1. rebuild under a new immutable image tag/digest, update the BenchFlow image reference, and verify the live pod `imageID` is not the old `32a580...` digest;
-2. run an 8–16 request live smoke test and require nonzero `attempted{tier="1:fs"}`, the attempted partition identity, zero load failures, and no old aggregate `tier="prefetch"` label;
-3. eliminate measured-phase `_swap_blocks_kernel` JIT;
-4. verify the actual accelerator SKU and pin or balance node placement;
-5. only then compare at least five paired custom-image N=0 and N=100 repetitions with measured request flag true and warm-up flag false in both cells.
+1. fix or work around the GuideLLM final-request race and require exactly 256/256 processed requests in every cell;
+2. move `_swap_blocks_kernel` JIT before the measured phase;
+3. run at least five paired N=0/N=100 repetitions on the same node, or balance and interleave node placement;
+4. retain the same repaired digest, request gates, workload, and cache-population procedure;
+5. use late/promoted as the timing diagnostic and evaluate paired TTFT/throughput only after every validity gate passes.
 
-Accept the mechanism only with real `1:fs` promotions, zero oracle-load failures, useful/effective-promoted of at least 0.9, and completion before target demand for most eligible blocks. Then evaluate paired target TTFT and aggregate pipeline throughput.
+After a repeatable performance result, sweep `N ∈ {25, 50, 100, 200}`.
