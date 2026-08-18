@@ -6,8 +6,8 @@ experiment: "Activity-Based KV Cache Tier Placement"
 team: "PSAP"
 phase: "1 — naive proactive prefetching (toy)"
 status: "draft"
-depends-on: "[[01 - Experiment Definition]] (Phase 1)"
-baseline: "[[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]"
+depends-on: "[[Methodology/01 - Experiment Definition]] (Phase 1)"
+baseline: "[[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]"
 workload: "semianalysisai/cc-traces-weka-061526"
 codebase: "vllm-project/vllm @ main (inspected 2026-08-11)"
 ---
@@ -16,7 +16,7 @@ codebase: "vllm-project/vllm @ main (inspected 2026-08-11)"
 
 This guide explains, step by step, how to implement the first proactive-fetching step of the ABC project: a toy prefetcher that proactively promotes **N** KV cache chunks from a secondary tier (NVMe / CephFS) to the CPU primary tier before they are requested, and measures whether request-visible latency improves.
 
-It is the implementation counterpart of **Phase 1** in [[01 - Experiment Definition]]. It is deliberately a toy: no prediction model, no cost-benefit gate, no session awareness. The only knob is **N**, the number of chunks to read-ahead.
+It is the implementation counterpart of **Phase 1** in [[Methodology/01 - Experiment Definition]]. It is deliberately a toy: no prediction model, no cost-benefit gate, no session awareness. The only knob is **N**, the number of chunks to read-ahead.
 
 > **Code references.** All file paths, class names, and method names below are verified against `vllm-project/vllm` at `main`, inspected 2026-08-11 via the GitHub connector. Code blocks are illustrative sketches, not copy-paste patches — line numbers drift; re-read each file before editing.
 
@@ -99,7 +99,7 @@ def _flush_pending_promotions(self):
 
 ### 1.4 The reactive cost
 
-Putting 1.1–1.3 together: **only the one chunk that caused the MISS is promoted per step.** A request that needs K chunks from a secondary tier is deferred ~K times, and each deferral pays the secondary-tier lookup delay. The Nemotron baseline report ([[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured CephFS/NVMe P50 lookup delays of ~2.2 s and P99 hitting the 10 s histogram ceiling. That multi-second, per-chunk, sequential cost is exactly what this toy targets.
+Putting 1.1–1.3 together: **only the one chunk that caused the MISS is promoted per step.** A request that needs K chunks from a secondary tier is deferred ~K times, and each deferral pays the secondary-tier lookup delay. The Nemotron baseline report ([[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]) measured CephFS/NVMe P50 lookup delays of ~2.2 s and P99 hitting the 10 s histogram ceiling. That multi-second, per-chunk, sequential cost is exactly what this toy targets.
 
 ## 2. The toy design: spatial read-ahead of N chunks on first miss
 
