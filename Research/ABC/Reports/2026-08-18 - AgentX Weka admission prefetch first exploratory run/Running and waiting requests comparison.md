@@ -8,7 +8,7 @@ source_report: 2026-08-18 - AgentX Weka admission prefetch first exploratory run
 
 # AgentX Weka running and waiting requests comparison
 
-Return to [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|scheduler and latency appendix index]].
+Return to [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Scheduler and latency comparison|scheduler and latency appendix index]].
 
 This chart preserves every archived Prometheus 15-second sample inside each profiling window. Elapsed axes are aligned to each cell's own profiling start.
 
