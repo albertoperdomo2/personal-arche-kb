@@ -3,7 +3,7 @@ title: Phase 1 admission prefetch first execution — request E2E latency compar
 date: 2026-08-17
 type: research_appendix
 experiment: ABC
-parent: "[[2026-08-17 - Phase 1 admission prefetch first execution report]]"
+parent: "[[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]]"
 source_resolution: one point per successful measured request; no downsampling
 ---
 
@@ -21,4 +21,4 @@ Figure A2 follows TTFT closely because output length was fixed at 64 tokens and 
 
 The first wave contains low-latency requests before the steady eight-stream queue forms. Later requests are dominated by queueing and reactive prompt loading. The configured treatment cannot be interpreted as a proactive-prefetch result because all prefetch metric series were absent.
 
-Return to [[2026-08-17 - Phase 1 admission prefetch first execution report]].
+Return to [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]].
