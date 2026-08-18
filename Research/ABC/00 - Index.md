@@ -29,6 +29,7 @@ status: "active"
 - [[Reports/2026-08-14 - Phase 1 NVMe prefetch validation|2026-08-14 — Phase 1 NVMe prefetch validation]] — rejected original post-miss candidate policy.
 - [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report|2026-08-17 — Phase 1 admission prefetch first execution report]] — invalid/inconclusive due manager/scheduler wiring mismatch and stale-image repeats.
 - [[Reports/2026-08-18 - Phase 1 admission prefetch repaired-image validation|2026-08-18 — Phase 1 admission prefetch repaired-image validation]] — mechanism accepted; performance remains provisional.
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|2026-08-18 — AgentX Weka admission prefetch first exploratory run]] — valid negative policy result: first-N prefetch ran, but N=100 was mostly redundant, failed, and late.
 
 ## Current conclusion
 
@@ -44,6 +45,8 @@ The repaired-image execution later on 2026-08-18 **passed the Phase 1 mechanism 
 
 The deployment and workload scaffolding otherwise worked: all three cells completed 256/256 requests without errors, both custom cells used the same immutable image digest, warm-up sent the request gate as false and measurement as true, the server rendered N=0 versus N=100 correctly, one sequence ran with roughly 6–7 waiting, and normal reactive NVMe offload remained active.
 
+The first AgentX Weka exploration reached a different regime. Both cells completed 863 profiling requests, but N=100 attempted 85,010 blocks: 90.99% were redundant in CPU, 87.08% of the 7,654 submitted NVMe promotions load-failed, only 990 became useful, and 98.50% were late at first demand. Mean waiting depth was below 0.25, so the trace provided little admission lead time. The N=100 latency aggregate was not better. This accepts the mechanism observation while rejecting N=100 first-N selection for this Weka configuration.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -58,15 +61,18 @@ The deployment and workload scaffolding otherwise worked: all three cells comple
 - Repeat configured N=100 treatment (invalid; stale p1 image and no prefetch series): [eddf9874c8304cf79fe3231b722be21c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/eddf9874c8304cf79fe3231b722be21c?workspace=benchflow)
 - Repaired-image N=0 control (performance-invalid; 255/256 completed): [3581db3f82d7427c883ff72113390121](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/3581db3f82d7427c883ff72113390121?workspace=benchflow)
 - Repaired-image N=100 treatment (mechanism accepted; performance provisional): [b28bd1db0836406a94c31c2e3faa7c35](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/b28bd1db0836406a94c31c2e3faa7c35?workspace=benchflow)
+- AgentX Weka N=0 control: [d82302a3769541cd9f98ad91bd8c3a69](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/d82302a3769541cd9f98ad91bd8c3a69?workspace=benchflow)
+- AgentX Weka N=100 treatment (policy ineffective; performance inconclusive): [915dac9e54d54b18b9b5a79ac8f69c2b](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/915dac9e54d54b18b9b5a79ac8f69c2b?workspace=benchflow)
 
 ## Next experiment
 
-The mechanism gate is now accepted on repaired digest `097cffbd...`. The next experiment is the performance proof:
+The mechanism gate is accepted on repaired digest `097cffbd...`, but N=100 behaves very differently across workloads. The next experiment is a controlled N sweep.
 
-1. fix or work around the GuideLLM final-request race and require exactly 256/256 processed requests in every cell;
-2. move `_swap_blocks_kernel` JIT before the measured phase;
-3. run at least five paired N=0/N=100 repetitions on the same node, or balance and interleave node placement;
-4. retain the same repaired digest, request gates, workload, and cache-population procedure;
-5. use late/promoted as the timing diagnostic and evaluate paired TTFT/throughput only after every validity gate passes.
+1. run `N ∈ {0, 25, 50, 100, 200}` under the same AgentX Weka trace, with at least three balanced/interleaved repetitions;
+2. retain the same repaired digest, request gate, cache cleaning, concurrency, and trace seed;
+3. require exact prefetch accounting and compare useful/attempted, load_failed/promoted, late/promoted, and redundant/attempted before interpreting latency;
+4. add N=400 only if N=200 does not create capacity, storage, or tracking pressure;
+5. after the N sweep, repeat the best N under controlled queue pressure because the first Weka pair averaged fewer than 0.25 waiting requests;
+6. if every first-N value remains mostly redundant or absent, stop increasing N and move selection to a later window or a reuse/residency heuristic.
 
-After a repeatable performance result, sweep `N ∈ {25, 50, 100, 200}`.
+The synthetic max_num_seqs=1 result remains the repeatability control for proving that the performance signal can reproduce when lead time is deliberately available.
