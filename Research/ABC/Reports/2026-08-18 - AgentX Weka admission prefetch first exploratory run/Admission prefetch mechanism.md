@@ -8,14 +8,14 @@ source_report: 2026-08-18 - AgentX Weka admission prefetch first exploratory run
 
 # AgentX Weka admission prefetch mechanism time series
 
-Return to [[../2026-08-18 - AgentX Weka admission prefetch first exploratory run|main report]].
+Return to [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|main report]].
 
 The native ten-second vLLM mechanism evidence is split across the following articles to preserve all 179 profiling-window samples without exceeding the renderer payload limit:
 
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism cumulative selection|Cumulative selection and submission]]
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism cumulative resolution|Cumulative final resolution]]
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism interval submission and lateness|Per-interval submission and lateness]]
-- [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism interval resolution|Per-interval useful and failed outcomes]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism cumulative selection|Cumulative selection and submission]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism cumulative resolution|Cumulative final resolution]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism interval submission and lateness|Per-interval submission and lateness]]
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Mechanism interval resolution|Per-interval useful and failed outcomes]]
 
 ## Exact totals
 
