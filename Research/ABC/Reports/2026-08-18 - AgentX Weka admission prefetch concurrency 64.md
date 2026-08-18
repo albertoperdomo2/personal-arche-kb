@@ -82,6 +82,33 @@ The 4-request difference is small (0.32%) but means this is not an exactly match
 
 ## Mechanism evidence
 
+### Promotion-status glossary
+
+The counters describe two stages: first, what happened when a block was selected; second, what eventually happened to work that was actually submitted.
+
+| Status | Plain-language meaning | How to interpret it |
+|---|---|---|
+| **Attempted** | The admission policy selected a block and asked the tiering manager to prefetch it. | The top-level denominator. An attempt does **not** imply that I/O was submitted. |
+| **Redundant** | The block was already in the primary CPU tier, or a CPU-tier load for it was already pending. | No new proactive I/O was necessary. This is safe but represents selection work that could not add another copy. |
+| **Promoted / submitted** | The manager accepted the block and submitted an assumed-resident secondary-tier → CPU load. | This means proactive work started—not that it succeeded, completed in time, or was later consumed. |
+| **Skipped** | The manager could not or should not submit the promotion, for example because primary capacity was unavailable or the source tier was filtered. | Best-effort prefetch declined the work. Normal reactive lookup remains available for correctness. |
+| **Useful** | Demand later looked up the proactively tracked key and found the CPU copy ready (`HIT`). | The clearest success outcome: demand consumed a proactive CPU-resident copy. |
+| **Late** | At the **first** demand observation, the proactive CPU load was still in flight (`HIT_PENDING`). It is counted at most once per promotion. | A timing diagnostic, not a terminal outcome. A late promotion may later become useful, fail, or otherwise resolve, so `late` overlaps the other statuses. |
+| **Load failed** | The proactive secondary-tier load completed unsuccessfully, commonly because blind assumed residency targeted a block absent from NVMe. | The proactive attempt failed, but this is not an HTTP/model correctness failure. The normal reactive path can still recover if the source later becomes available. |
+| **Wasted** | The proactive copy never served demand before it disappeared or tracking was resolved—for example, demand observed a miss, or cache reset destroyed an unused promoted copy. | Work completed or was tracked proactively but produced no observed demand benefit. |
+| **Untracked** | The bounded outcome tracker overflowed and dropped provenance for the block. | Its final usefulness can no longer be attributed reliably. It is deliberately not counted as wasted. |
+| **Unresolved** | A report-derived window-edge value: promoted work minus all terminal outcomes observed by the final profiling log record. | Usually still in flight or awaiting attribution at the measurement boundary. It is not a vLLM counter of its own. |
+
+The selection statuses form an exact partition:
+
+$attempted = redundant + promoted + skipped$
+
+For submitted promotions, the eventual terminal accounting is:
+
+$promoted = useful + load\ failed + wasted + untracked + unresolved$
+
+`Late` is intentionally absent from the second equation because it records **whether the copy was ready at first demand**, not its final outcome. For example, a block can be both `late` and later `useful`.
+
 Exact profiling-window totals come from 181 vLLM metric-log records. No log samples were removed.
 
 | Outcome | Blocks | Fraction |
