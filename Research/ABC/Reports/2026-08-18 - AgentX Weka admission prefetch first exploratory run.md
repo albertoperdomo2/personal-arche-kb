@@ -160,3 +160,9 @@ The implementation is functioning, but `N=100` first-N admission prefetch should
 ## Data provenance and limitations
 
 AIPerf aggregates and request records come from `benchmark/profile_export_aiperf.json` and `.jsonl`. Exact prefetch totals and native ten-second progression come from the vLLM model log restricted to the profiling interval. Prometheus series are archived at native 15-second cadence and restricted to each AIPerf profiling window. Runtime-node NVMe metrics are node/device-wide. One repetition, different nodes, missing GPU utilization, implicit `max_num_seqs`, and asynchronous overlap between late and final outcomes limit causal interpretation.
+
+## Follow-up: concurrency 64
+
+The planned queue-pressure follow-up is complete: [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|AgentX Weka admission prefetch at concurrency 64]].
+
+Mean N=100 waiting depth rose from 0.24 to 6.22 requests. Useful/attempted increased from 1.16% to 15.81%, late/promoted fell from 98.50% to 42.39%, and load_failed/promoted fell from 87.08% to 37.78%. This supports the Phase 1 lead-time intuition, while the mixed latency result remains inconclusive. The active next experiment is the repeated N sweep with balanced node placement.
