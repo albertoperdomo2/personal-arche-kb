@@ -8,7 +8,7 @@ source_report: 2026-08-18 - AgentX Weka admission prefetch first exploratory run
 
 # AgentX Weka runtime-node NVMe throughput comparison
 
-Return to [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Storage and transfer comparison|storage and transfer appendix index]].
+Return to [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Storage and transfer comparison|storage and transfer appendix index]].
 
 This chart preserves every archived Prometheus 15-second sample inside each profiling window. Runtime-node storage metrics are node/device-wide.
 
