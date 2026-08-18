@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-13
+last_updated: 2026-08-18
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -30,6 +30,9 @@ last_updated: 2026-08-13
   - issue: https://github.com/llm-d/llm-d-router/issues/2358
 - **Remove deprecated UDS/legacy tokenizer code paths and drop the llm-d-kv-cache dependency** · Low · Confirmed — Remove the UDS/legacy tokenizer paths and `TokenizersPoolConfig`, then drop `github.com/llm-d/llm-d-kv-cache` from `go.mod`/`go.sum` and confirm `make presubmit` passes  <!-- fp: llm-d/llm-d-router:issue:drop-deprecated-uds-tokenizer-kvcache-dep -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2361
+- **`pkg/epp/README.md` links 404 after the GIE API consolidation** · Low · Confirmed — Repoint links to current locations or convert to relative in-repo references; verify with link checker (.lychee.toml)  <!-- fp: llm-d/llm-d-router:issue:epp-readme-broken-links -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2433
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/README.md#L3-L13
 
 ## Bugs
 
@@ -60,6 +63,13 @@ last_updated: 2026-08-13
 - **rewriteModelName does an unscoped global byte-replace per streaming chunk (split-field misses, content corruption)** · Low · Likely — Carry the last `len("\"model\":\"\"")+len(targetModel)` bytes across chunks so split fields still match, and scope the replacement to JSON token boundaries instead of a literal `ReplaceAll`  <!-- fp: llm-d/llm-d-router:bug:rewrite-model-name-global-replace -->
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/handlers/server.go#L538-L541
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/handlers/server.go#L627-L641
+- **Streaming usage accumulation replaces the whole Usage struct, dropping Anthropic prompt/cache tokens from earlier chunks** · High · Confirmed — Replace struct replacement at response.go:81 with per-field merge (copy non-zero PromptTokens/CompletionTokens/PromptTokenDetails, recompute TotalTokens); add handler-level test driving two Anthropic events as separate chunks  <!-- fp: llm-d/llm-d-router:bug:anthropic-streaming-usage-prompt-tokens-overwrite -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2431
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/handlers/response.go#L80-L81
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/framework/plugins/requesthandling/parsers/anthropic/anthropic.go#L201-L209
+- **Always-disagg P/D decider runs prefill work on decode pods when no prefiller is READY instead of failing** · Medium · Likely — Trace prefill-filter + pd_profile_handler path for empty-READY-prefiller case; propose fail-closed (503/rejected-no-endpoints) so misconfigured prefill tiers don't silently fall through to decode  <!-- fp: llm-d/llm-d-router:issue:pd-always-disagg-runs-prefill-on-decode-when-no-prefillers-ready -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2427
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/always_disagg_pd_decider.go#L48-L50
 
 ## Performance
 
@@ -70,6 +80,9 @@ last_updated: 2026-08-13
 - **datalayer.Scope rebuilds the plugin's static allowedPut/allowedGet key sets per filter/scorer invocation per request** · Medium · Likely — Compute each plugin's `allowedPut`/`allowedGet` once at registration (or memoize on the plugin/ScopedEndpoint) and reuse the immutable maps across `Scope` calls  <!-- fp: llm-d/llm-d-router:perf:datalayer-scope-rebuilds-static-keymaps -->
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/datalayer/endpoint_scope.go#L189-L231
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/scheduling/scheduler_profile.go
+- **podsPerKeyPrintHelper builds a full string map dump on every ScoreTokens call regardless of trace logging being enabled** · Medium · Confirmed — Gate behind `traceLogger.V(logging.TRACE).Enabled()` or use a lazy marshaler so the O(B·N) map walk + quadratic string concatenation only runs when TRACE logging is on  <!-- fp: llm-d/llm-d-router:perf:scoretokens-podsperkeyprinthelper-eager-eval -->
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvcache/indexer.go#L189-L190
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvcache/indexer.go#L218-L229
 
 ## Features & RFCs
 
@@ -103,5 +116,13 @@ last_updated: 2026-08-13
   - **Rough effort:** High — CRD design, scheduler integration, sidecar coordination.
   <!-- fp: llm-d/llm-d-router:issue:native-disaggregatedset-routing -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2143
+- **KV events silently dropped during ZMQ replay cooldown are unmetricized, hiding prefix-cache index data loss from operators** · Low · Likely
+  - **Problem:** When the ZMQ subscriber detects a sequence gap but `canAttemptReplay()` is false (within the 30s `replayCooldown` after a prior failure), it drops the live event with only a `debugLogger.Info` — no `metrics.*` counter is incremented. The same silent drop occurs for the join-mid-stream case when replay is in cooldown. These dropped events are KV-cache residency updates that the prefix-cache scorer relies on; losing them creates stale/missing residency for the affected pods until the next successful replay, silently degrading cache-aware routing accuracy. Every other failure mode in this file increments a `metrics.ZMQErrors` or `metrics.MessagesReceived` series, so these two paths are the only unobservable data-loss exits.
+  - **Proposed approach:** Add a `metrics.ZMQEventsDroppedCooldown` counter (labeled by `podIdentifier`, like the existing `ZMQErrors`) incremented at both drop sites (zmq_subscriber.go:211 and :224).
+  - **Impact:** Operators can alert on prefix-cache event loss and correlate it with routing-quality regressions; prefix-cache-aware routing accuracy becomes observable.
+  - **Rough effort:** Low — counter definition in metrics.go + two increment calls.
+  <!-- fp: llm-d/llm-d-router:feature:zmq-replay-cooldown-dropped-events-metric -->
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L207-L211
+  - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L222-L224
 
 ## Recently Resolved
