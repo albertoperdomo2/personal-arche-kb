@@ -1,6 +1,7 @@
 ---
 title: Phase 1 admission prefetch first execution report
 date: 2026-08-17
+last_updated: 2026-08-18
 type: research_report
 experiment: ABC
 status: invalid_inconclusive
@@ -198,6 +199,43 @@ git diff --check: passed
 ```
 
 The broader scheduler file's network-sensitive fixtures exceeded the available execution window after requiring Hugging Face metadata; the focused scheduler sections covering this change completed successfully. No image has yet been rebuilt from the repaired working tree. The next checkpoint is a new immutable image digest followed by the 8–16 request live mechanism smoke test.
+
+## Repeat execution checkpoint — 2026-08-18
+
+Two nominal custom-image cells were executed after the local repair checkpoint:
+
+| Role | Run | Configured N | Completed requests | Request throughput | Mean TTFT | p95 TTFT | Resolved image |
+|---|---|---:|---:|---:|---:|---:|---|
+| Nominal control | [048fa430…](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/048fa4300c4c4b878941f72395c1258e?workspace=benchflow) | 0 | 255/256 | 1.0403 req/s | 6688.7 ms | 8123.3 ms | old custom digest `32a580...` |
+| Nominal treatment | [eddf9874…](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/eddf9874c8304cf79fe3231b722be21c?workspace=benchflow) | 100 | 256/256 | 1.0449 req/s | 6652.0 ms | 7241.1 ms | old custom digest `32a580...` |
+
+### Verdict
+
+This repeat is also **invalid/inconclusive** for proactive prefetch. Both pods pulled `quay.io/rh-ee-aperdomo/vllm:v0.27.0-prefetch-p1` and resolved to `sha256:32a580fe2005571b7800c8862a0c484ac3626dfb3f4d6da0c0cdf4de1c8ae054`—the same pre-repair image used by the first execution. The local manager-property fix was therefore absent.
+
+The N=100 model log parsed `admission_prefetch_chunks: 100`, but all nine archived prefetch queries again returned empty result matrices: attempted, promoted, redundant, skipped, useful, wasted, untracked, load_failed, and late. These are missing series, not zero-valued activity. The mechanism gate failed exactly as in the first execution.
+
+The nominal control has an additional validity failure. GuideLLM created 256 requests but processed and marked successful only 255; one remained in `processing_requests`, `end_processing_time` was null, and the max-request constraint still reported one remaining request even though the client emitted “Benchmarking complete” and BenchFlow marked the run FINISHED.
+
+### Observed aggregate differences, without causal attribution
+
+Relative to the incomplete N=0 cell, the nominal N=100 cell showed:
+
+- request throughput: +0.44%;
+- mean TTFT: −0.55%;
+- median TTFT: +0.37%;
+- p95 TTFT: −10.86%;
+- p99 TTFT: −9.89%;
+- mean E2E latency: −0.44%;
+- p95 E2E latency: −9.73%.
+
+These numbers are not evidence that admission prefetch helped: proactive work did not run, one control request did not complete, the model pods used different nodes, and there is only one repetition. The tail improvement is retained only as an observed no-prefetch run-to-run difference.
+
+Both logs again show `_swap_blocks_kernel` JIT compilation during the measured phase. The deployment tag still says H200 while the selected node names contain `gpu-h100`, so the accelerator metadata inconsistency also remains.
+
+### Required correction before another run
+
+Do not launch another full matrix from the mutable `v0.27.0-prefetch-p1` tag. Build and publish the repaired tree under a new tag, resolve and record its immutable digest, update the BenchFlow experiment to that tag or digest, and verify the live pod `imageID` differs from `32a580...` before sending benchmark traffic. Then run the small mechanism smoke test and require nonzero `attempted{tier="1:fs"}` before proceeding to a 256-request comparison.
 
 ## Data provenance and limitations
 
