@@ -3,7 +3,7 @@ title: Phase 1 admission prefetch first execution — offload and storage teleme
 date: 2026-08-17
 type: research_appendix
 experiment: ABC
-parent: "[[2026-08-17 - Phase 1 admission prefetch first execution report]]"
+parent: "[[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]]"
 source_resolution: native 15-second Prometheus samples; measured phase only; no resampling or downsampling
 ---
 
@@ -86,4 +86,4 @@ No chart is drawn from absent samples. Treating missing counter children as nume
 - Rate functions span history before each timestamp; the earliest measured samples can partially reflect the immediately preceding warm-up and 18–20 second phase gap.
 - The three model pods used different nodes, preventing a hardware-paired device comparison.
 
-Return to [[2026-08-17 - Phase 1 admission prefetch first execution report]].
+Return to [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]].
