@@ -3,13 +3,13 @@ title: Phase 1 admission prefetch first execution — request TTFT comparison, r
 date: 2026-08-17
 type: research_appendix
 experiment: ABC
-parent: "[[2026-08-17 - Phase 1 admission prefetch first execution report]]"
+parent: "[[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]]"
 source_resolution: one point per successful measured request; no downsampling
 ---
 
 # Request TTFT comparison — requests 129–256
 
-This is the native-sample continuation of [[2026-08-17 - Phase 1 admission prefetch first execution report/Request TTFT comparison - requests 1-128]]. Points remain ordered by actual client request start time within each run.
+This is the native-sample continuation of [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report/Request TTFT comparison - requests 1-128]]. Points remain ordered by actual client request start time within each run.
 
 Provenance: `results/benchmark_output.json`, field `time_to_first_output_token_ms`, one point per successful request.
 
@@ -29,4 +29,4 @@ Figure A2 completes the request-level view. Together, Figures A1 and A2 contain 
 
 The first wave contains low-TTFT requests before the steady eight-stream queue forms. Later requests spend most of their client-visible TTFT behind the single allowed sequence. This is the overlap window admission prefetch is meant to exploit, but the missing manager property prevented the experiment from doing so.
 
-Return to [[2026-08-17 - Phase 1 admission prefetch first execution report]].
+Return to [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]].
