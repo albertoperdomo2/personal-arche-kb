@@ -29,7 +29,8 @@ status: "active"
 - [[Reports/2026-08-14 - Phase 1 NVMe prefetch validation|2026-08-14 — Phase 1 NVMe prefetch validation]] — rejected original post-miss candidate policy.
 - [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report|2026-08-17 — Phase 1 admission prefetch first execution report]] — invalid/inconclusive due manager/scheduler wiring mismatch and stale-image repeats.
 - [[Reports/2026-08-18 - Phase 1 admission prefetch repaired-image validation|2026-08-18 — Phase 1 admission prefetch repaired-image validation]] — mechanism accepted; performance remains provisional.
-- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|2026-08-18 — AgentX Weka admission prefetch first exploratory run]] — valid negative policy result: first-N prefetch ran, but N=100 was mostly redundant, failed, and late.
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|2026-08-18 — AgentX Weka admission prefetch first exploratory run]] — valid negative policy result at concurrency 32: first-N prefetch ran, but N=100 was mostly redundant, failed, and late.
+- [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|2026-08-18 — AgentX Weka admission prefetch at concurrency 64]] — Phase 1 queue-sensitivity supported: more waiting sharply increased useful yield and reduced lateness; performance remains inconclusive.
 
 ## Current conclusion
 
@@ -45,7 +46,9 @@ The repaired-image execution later on 2026-08-18 **passed the Phase 1 mechanism 
 
 The deployment and workload scaffolding otherwise worked: all three cells completed 256/256 requests without errors, both custom cells used the same immutable image digest, warm-up sent the request gate as false and measurement as true, the server rendered N=0 versus N=100 correctly, one sequence ran with roughly 6–7 waiting, and normal reactive NVMe offload remained active.
 
-The first AgentX Weka exploration reached a different regime. Both cells completed 863 profiling requests, but N=100 attempted 85,010 blocks: 90.99% were redundant in CPU, 87.08% of the 7,654 submitted NVMe promotions load-failed, only 990 became useful, and 98.50% were late at first demand. Mean waiting depth was below 0.25, so the trace provided little admission lead time. The N=100 latency aggregate was not better. This accepts the mechanism observation while rejecting N=100 first-N selection for this Weka configuration.
+The first AgentX Weka exploration at concurrency 32 reached a low-queue regime. Both cells completed 863 profiling requests, but N=100 attempted 85,010 blocks: 90.99% were redundant in CPU, 87.08% of the 7,654 submitted NVMe promotions load-failed, only 990 became useful, and 98.50% were late at first demand. Mean waiting depth was below 0.25, so the trace provided little admission lead time. The N=100 latency aggregate was not better.
+
+The concurrency-64 follow-up created the missing pressure: N=100 averaged 6.22 waiting requests and recorded 19,508 useful blocks. Relative to concurrency 32, useful/attempted rose from 1.16% to 15.81%, late/promoted fell from 98.50% to 42.39%, and load_failed/promoted fell from 87.08% to 37.78%. This supports the Phase 1 wiring and lead-time intuition. The performance comparison remains inconclusive and not positive overall: mean/p95 TTFT were 3.19%/10.44% higher, median TTFT and ITL improved, the nodes differed, request counts drifted by four, and both cells were heavily pressured.
 
 ## MLflow run registry
 
@@ -62,17 +65,19 @@ The first AgentX Weka exploration reached a different regime. Both cells complet
 - Repaired-image N=0 control (performance-invalid; 255/256 completed): [3581db3f82d7427c883ff72113390121](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/3581db3f82d7427c883ff72113390121?workspace=benchflow)
 - Repaired-image N=100 treatment (mechanism accepted; performance provisional): [b28bd1db0836406a94c31c2e3faa7c35](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/358/runs/b28bd1db0836406a94c31c2e3faa7c35?workspace=benchflow)
 - AgentX Weka N=0 control: [d82302a3769541cd9f98ad91bd8c3a69](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/d82302a3769541cd9f98ad91bd8c3a69?workspace=benchflow)
-- AgentX Weka N=100 treatment (policy ineffective; performance inconclusive): [915dac9e54d54b18b9b5a79ac8f69c2b](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/915dac9e54d54b18b9b5a79ac8f69c2b?workspace=benchflow)
+- AgentX Weka concurrency-32 N=100 treatment (policy ineffective; performance inconclusive): [915dac9e54d54b18b9b5a79ac8f69c2b](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/915dac9e54d54b18b9b5a79ac8f69c2b?workspace=benchflow)
+- AgentX Weka concurrency-64 N=0 control: [beaf48bcd79d46a1b155ba9af508ec2c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/beaf48bcd79d46a1b155ba9af508ec2c?workspace=benchflow)
+- AgentX Weka concurrency-64 N=100 treatment (mechanism accepted; performance inconclusive): [6febe03b9d1f4b4e95f628a34e59c038](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/6febe03b9d1f4b4e95f628a34e59c038?workspace=benchflow)
 
 ## Next experiment
 
-The mechanism gate is accepted on repaired digest `097cffbd...`, but N=100 behaves very differently across workloads. The next experiment is a controlled N sweep.
+Phase 1 wiring and queue sensitivity are now supported across the repaired GuideLLM run and both AgentX pressure points. The next experiment should tune N and establish repeatability rather than merely add more pressure.
 
-1. run `N ∈ {0, 25, 50, 100, 200}` under the same AgentX Weka trace, with at least three balanced/interleaved repetitions;
-2. retain the same repaired digest, request gate, cache cleaning, concurrency, and trace seed;
-3. require exact prefetch accounting and compare useful/attempted, load_failed/promoted, late/promoted, and redundant/attempted before interpreting latency;
-4. add N=400 only if N=200 does not create capacity, storage, or tracking pressure;
-5. after the N sweep, repeat the best N under controlled queue pressure because the first Weka pair averaged fewer than 0.25 waiting requests;
-6. if every first-N value remains mostly redundant or absent, stop increasing N and move selection to a later window or a reuse/residency heuristic.
+1. run `N ∈ {0, 25, 50, 100, 200}` with at least three balanced/interleaved repetitions;
+2. retain concurrency 32 as the lower-pressure workload and concurrency 64 as the queue-pressure point; add an intermediate concurrency only if a moderate sustained queue is needed;
+3. swap or balance the `…-6kl5z` and `…-mt46x` node assignments so node and treatment are no longer confounded;
+4. require exact selection accounting and report useful/attempted, load_failed/promoted, late/promoted, redundant/attempted, unresolved state, preemptions, and GPU KV occupancy before latency;
+5. add N=400 only if N=200 does not create capacity, storage, tracking, or preemption pressure;
+6. if all first-N settings remain mostly redundant or missing, stop increasing N and move selection to a later window or a reuse/residency heuristic.
 
-The synthetic max_num_seqs=1 result remains the repeatability control for proving that the performance signal can reproduce when lead time is deliberately available.
+The Phase 1 exit criterion is repeatable useful promotion with reduced lateness and no correctness/request failures. A repeatable performance win is the next tuning question, not a prerequisite for accepting that the POC wiring works.
