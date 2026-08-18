@@ -3,7 +3,7 @@ title: Phase 1 admission prefetch first execution — request TTFT comparison, r
 date: 2026-08-17
 type: research_appendix
 experiment: ABC
-parent: "[[2026-08-17 - Phase 1 admission prefetch first execution report]]"
+parent: "[[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]]"
 source_resolution: one point per successful measured request; no downsampling
 ---
 
@@ -21,6 +21,6 @@ Provenance: `results/benchmark_output.json`, field `time_to_first_output_token_m
 
 Figure A1 exposes the main variability hidden by the aggregate table. Requests above 8 seconds TTFT numbered 33 for the official control, 3 for the custom control, and 33 for the configured treatment. The official control and inactive treatment have the same slow-tail count even though their slow requests occur at different admission ordinals. The custom control’s three-request tail is therefore not a stable image-level or feature-level effect.
 
-The continuation preserves ordinals 129–256 in [[2026-08-17 - Phase 1 admission prefetch first execution report/Request TTFT comparison - requests 129-256]].
+The continuation preserves ordinals 129–256 in [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report/Request TTFT comparison - requests 129-256]].
 
-Return to [[2026-08-17 - Phase 1 admission prefetch first execution report]].
+Return to [[Reports/2026-08-17 - Phase 1 admission prefetch first execution report]].
