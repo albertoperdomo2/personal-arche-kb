@@ -6,7 +6,7 @@ experiment: "Activity-Based KV Cache Tier Placement"
 team: "PSAP"
 phase: "2 — heuristic prefetching"
 status: "tentative"
-depends-on: "[[02 - Phase 1 Naive Prefetch Implementation Guide]] (Phase 1 results)"
+depends-on: "[[Methodology/02 - Phase 1 Naive Prefetch Implementation Guide]] (Phase 1 results)"
 workload: "semianalysisai/cc-traces-weka-061526"
 codebase: "vllm-project/vllm @ main (inspected 2026-08-11)"
 ---
@@ -19,7 +19,7 @@ This guide outlines the implementation of Phase 2 of the ABC project: replacing 
 
 ## 1. What Phase 1 established
 
-Phase 1 ([[02 - Phase 1 Naive Prefetch Implementation Guide]]) built and instrumented a toy prefetcher with these properties:
+Phase 1 ([[Methodology/02 - Phase 1 Naive Prefetch Implementation Guide]]) built and instrumented a toy prefetcher with these properties:
 
 - **Static N** read-ahead: on the first demand `MISS` in `_maximal_prefix_lookup`, proactively promote the next N chunks from secondary to primary.
 - **Five Prometheus counters**: `PREFETCH_ATTEMPTED` / `PROMOTED` / `SKIPPED` (process) and `PREFETCH_USEFUL` / `WASTED` (outcome), with a global `_prefetched_keys` set for cross-turn hit-rate tracking.
@@ -567,7 +567,7 @@ The heuristic should show a larger N+1 improvement because it selects blocks mor
 
 ## 8. Run plan and exit criteria
 
-This maps to Phase 2 of [[01 - Experiment Definition]].
+This maps to Phase 2 of [[Methodology/01 - Experiment Definition]].
 
 1. **[depends on Phase 1]** Finalize the adaptive N thresholds, feature weights, and over-fetch factor from the Phase 1 sweep results.
 2. **Implement** Component 1 (adaptive N) — deploy and measure against Phase 1 best (row 2a in the comparison matrix).
@@ -591,7 +591,7 @@ This maps to Phase 2 of [[01 - Experiment Definition]].
 
 ## 10. Out of scope for Phase 2
 
-Explicitly **not** in Phase 2 (deferred to Phase 3 per [[01 - Experiment Definition]]):
+Explicitly **not** in Phase 2 (deferred to Phase 3 per [[Methodology/01 - Experiment Definition]]):
 
 - The XGBoost temperature prediction model — Phase 3. The heuristic is the hand-tuned precursor that de-risks the feature engineering.
 - The cost-benefit migration gate $\text{Benefit} > N \times \text{Cost}$ — Phase 3. Phase 2 monitors the store-path conflict but doesn't model it.
@@ -602,9 +602,9 @@ Explicitly **not** in Phase 2 (deferred to Phase 3 per [[01 - Experiment Definit
 
 ## 11. Related
 
-- [[01 - Experiment Definition]] — Phase 2 objective, method, and exit criteria.
-- [[02 - Phase 1 Naive Prefetch Implementation Guide]] — the Phase 1 implementation this builds on; the cross-turn benefit model; the five-counter telemetry; the global `_prefetched_keys` tracking.
-- [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 baseline data.
+- [[Methodology/01 - Experiment Definition]] — Phase 2 objective, method, and exit criteria.
+- [[Methodology/02 - Phase 1 Naive Prefetch Implementation Guide]] — the Phase 1 implementation this builds on; the cross-turn benefit model; the five-counter telemetry; the global `_prefetched_keys` tracking.
+- [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 baseline data.
 - [[AgentX Workload Definition]] — the agentic-replay workload family; the `061526` corpus.
 - [[Experiment Methodology]] — run structure, acceptance gates, repetition requirements.
 - [[Activity-Based KV Cache Offloading]] — concept note; the feature vector definition; the implementation-placement verdict.
