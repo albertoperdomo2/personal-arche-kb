@@ -8,7 +8,7 @@ source_report: 2026-08-18 - AgentX Weka admission prefetch first exploratory run
 
 # Mechanism interval resolution
 
-Return to [[2026-08-18 - AgentX Weka admission prefetch first exploratory run/Admission prefetch mechanism|mechanism appendix index]].
+Return to [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run/Admission prefetch mechanism|mechanism appendix index]].
 
 This chart preserves all native ten-second vLLM metric emissions in the N=100 profiling window; no samples were dropped. Missing counters in an emitted interval are represented as zero deltas.
 
