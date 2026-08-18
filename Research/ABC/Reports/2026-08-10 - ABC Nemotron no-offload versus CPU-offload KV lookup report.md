@@ -99,7 +99,7 @@ The storage tiers are higher than the no-offload and CPU-only profile P50 values
 
 ## Time-series appendix
 
-The native 15-second plots are split into [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report/KV lookup and blocked-request time series|lookup and blocked-request time series]] and [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report/KV stall and DMA time series|stall-rate and DMA time series]]. The plots show that CephFS and NVMe retrieval delays are measured in seconds and create substantial blocked-request pressure, while CPU/CUDA DMA remains in the millisecond range. DMA is not a substitute for external-tier latency.
+The native 15-second plots are split into [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report/KV lookup and blocked-request time series|lookup and blocked-request time series]] and [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report/KV stall and DMA time series|stall-rate and DMA time series]]. The plots show that CephFS and NVMe retrieval delays are measured in seconds and create substantial blocked-request pressure, while CPU/CUDA DMA remains in the millisecond range. DMA is not a substitute for external-tier latency.
 
 ## KV-offload metric taxonomy
 
