@@ -7,7 +7,7 @@ team: "PSAP"
 status: "active"
 phase: "0 — baseline characterization"
 related-concept: "[[Activity-Based KV Cache Offloading]]"
-related-report: "[[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]"
+related-report: "[[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]"
 ---
 
 # Activity-Based KV Cache Tier Placement — Experiment Definition
@@ -133,7 +133,7 @@ Each phase is sequential: a later phase depends on the latency/reuse signal vali
 
 **Inputs.**
 
-- Existing Nemotron no-offload / CPU / CephFS / NVMe runs (see [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]).
+- Existing Nemotron no-offload / CPU / CephFS / NVMe runs (see [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]]).
 - Additional runs as needed to expose per-block access telemetry (the current report is request-visible lookup telemetry, not per-block access traces).
 
 **Exit criteria.**
@@ -235,6 +235,6 @@ To keep results traceable and reusable, every phase obeys the workspace research
 ## Related
 
 - [[Activity-Based KV Cache Offloading]] — concept note and implementation-placement verdict (2026-08-02).
-- [[2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 input data.
+- [[Reports/2026-08-10 - ABC Nemotron no-offload versus CPU-offload KV lookup report]] — Phase 0 input data.
 - [[Experiment Methodology]] — standardized run structure and acceptance rules.
 - [[00 - Index]] — ABC project index.
