@@ -1,6 +1,6 @@
 ---
 title: "ABC KV lookup experiments"
-date: "2026-08-18"
+date: "2026-08-19"
 type: "research-index"
 experiment: "ABC CPU offload KV lookup comparison"
 status: "active"
@@ -12,7 +12,7 @@ status: "active"
 
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
 - [[Methodology/00 - Index|Methodology and Implementation]] — experiment definitions, plans, implementation guides, and design discussions.
-- [[Version2/00 - Index|Version 2 — Event-Driven Temperature Prefetching]] — re-sequenced program (2026-08-18): strategy, compressed phased plan, and the vLLM v0.27.0-grounded implementation guide for the temperature heuristic.
+- [[Version2/00 - Index|Version 2 — Event- and Queue-Informed Prefetching]] — conditionally valid proposition; the 2026-08-19 theoretical review requires design and guide revision before implementation.
 
 ## Methodology and implementation
 
@@ -51,6 +51,14 @@ The first AgentX Weka exploration at concurrency 32 reached a low-queue regime. 
 
 The concurrency-64 follow-up created the missing pressure: N=100 averaged 6.22 waiting requests and recorded 19,508 useful blocks. Relative to concurrency 32, useful/attempted rose from 1.16% to 15.81%, late/promoted fell from 98.50% to 42.39%, and load_failed/promoted fell from 87.08% to 37.78%. This supports the Phase 1 wiring and lead-time intuition. The performance comparison remains inconclusive and not positive overall: mean/p95 TTFT were 3.19%/10.44% higher, median TTFT and ITL improved, the nodes differed, request counts drifted by four, and both cells were heavily pressured.
 
+## Version 2 theoretical validation checkpoint — 2026-08-19
+
+[[Version2/04 - Theoretical Validation|Version2 theoretical validation]] reviewed all ABC records, the local V1 implementation path, and the primary research basis. The broad proposition is **conditionally valid**: workflow events and queue lead time can justify proactive movement of reusable KV, and deterministic policy should precede ML. The current V2.1 documents are **not implementation-ready**.
+
+The no-go issues are the uniform-Hot admission scorer, missing ordered contiguous-prefix semantics, missing async-residency state machine, speculative CPU allocation that can evict, per-key misuse of AET, an incomplete cost gate, insufficient tool-window signaling, and unstable policy accounting. The corrected proposition is to promote residency-verified contiguous session prefixes only when predicted lead time can hide calibrated transfer latency and expected critical-path benefit exceeds contention and eviction cost.
+
+The next Version2 action is V2.0 characterization/calibration, followed by revision of [[Version2/01 - Strategy and Re-sequencing|01]], [[Version2/02 - Phased Plan|02]], and [[Version2/03 - Event-Driven Temperature Heuristic Implementation Guide|03]]. Implementation of V2.1 is gated on that revision.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -82,3 +90,7 @@ Phase 1 wiring and queue sensitivity are now supported across the repaired Guide
 6. if all first-N settings remain mostly redundant or missing, stop increasing N and move selection to a later window or a reuse/residency heuristic.
 
 The Phase 1 exit criterion is repeatable useful promotion with reduced lateness and no correctness/request failures. A repeatable performance win is the next tuning question, not a prerequisite for accepting that the POC wiring works.
+
+### Version2 next action
+
+The V1 N sweep remains useful as a blind-policy baseline, but it must not supply Version2 cost constants from uncontrolled load failures or node-confounded runs. Version2 should first execute the controlled V2.0 resident-key and lead-time characterization defined in [[Version2/04 - Theoretical Validation|the validation record]], declare numerical acceptance bounds, and then revise the implementation guide before coding.
