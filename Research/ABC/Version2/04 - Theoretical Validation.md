@@ -302,3 +302,24 @@ Six further issues were raised after the first revision and incorporated the sam
 6. Async-loop timing → remaining lead time recomputed at every re-drive; precise `on_schedule_end` ordering specified (03 §3.2, §3.7).
 
 **Verdict after resolution:** the proposition is sound and the phase structure is accepted for implementation planning. V2.0 characterization remains the next step.
+
+## Independent re-validation addendum (2026-08-19, third round)
+
+An independent review of the revised documents 01–03 re-checked the logic, the V1 evidence chain, and — new in this round — the load-bearing code assumptions directly against the local `experimental/naive-proactive-prefetching` tree. **Verdict: the revised proposition and phase structure are confirmed sound; no new blocking issues.** The corrected proposition targets exactly the two failure modes V1 measured (blind residency → 87.08% load-fail at C32; missing lead time → 98.50% late at C32 versus 42.39% at C64), and every correction from the first two rounds is genuinely present in the revised documents.
+
+### Code assumptions verified (measured observations, local tree)
+
+- `CPUOffloadingManager.prepare_store` evicts LRU victims to make room and returns `None` only when eviction cannot free enough (`cpu/manager.py`) — the non-evicting reservation requirement (03 §3.4) is real, not hypothetical.
+- In-flight stores are tracked at `ref_cnt = -1` and excluded from evictable accounting (`cpu/manager.py`) — the reservation-is-allocation idiom in 03 §3.4 builds on an existing mechanism.
+- `complete_store(success=False)` removes and frees not-yet-ready blocks — the cancellation/release path in 03 §3.4 exists as claimed.
+- `AsyncLookupManager.lookup` returns `None` (retry) with batched flush at schedule end — the state-machine requirement (03 §3.2) is genuine; a one-shot admission callback would miss results.
+- `_maximal_prefix_lookup` breaks at the first `MISS` — the ordered-contiguous-prefix-bundle constraint is provably necessary; discontinuous prefetch is unusable by the demand path.
+- `TieringOffloadingManager.on_schedule_end` runs `_maybe_process_finished_jobs()` first and `_flush_pending_promotions()` later — the §3.7 policy-hook insertion point exists exactly where the guide places it.
+
+### Minor notes (non-blocking, for the V2.0/V2.1 revision)
+
+1. **Same-step lookup consumability is optimistic.** `AsyncLookupManager.flush()` posts the batch to the worker at schedule end and results are drained no earlier than the next step, so a lookup issued at step k resolves at step k+1 at best. 03 §3.7's guarantee "lookup results from this step's flush are consumable in the same step" should be restated as a minimum one-step lookup latency. The design already absorbs this (`H_remaining` recomputation; "lookup delay consumes lead time"), so this is a wording/expectation fix, not a design flaw.
+2. **Refresh the numerical exit-criteria anchors from the V2.0 rerun.** The V2.1 exit thresholds in 02 (≤10% vs 37.78%, ≤21% vs 42.39%, >15.81%) are anchored on single-repetition, node-confounded V1 runs. Since V2.0 item 2 reruns the V1 sweep with ≥3 balanced repetitions, the final bounds should be declared against those rerun values, consistent with 02's own rule that bounds are declared before treatment results are inspected.
+3. **The tested pressure points may straddle the feasible region.** C32 gave essentially no lead time (mean waiting < 0.25) and C64 is a saturation regime (~91–92% mean GPU KV occupancy, elevated preemptions) where prefetch benefit can be masked by the HBM bottleneck. The intermediate-concurrency cell that 02 lists as optional should be treated as likely necessary for V2.0 lead-time characterization and for locating the H2 benefit region.
+
+The AET characterization in correction 4 was also re-verified against the ATC 2016 kinetic-modeling paper: AET is derived from reuse-time distributions as a population-level quantity, so its removal as a per-key countdown is correct. V2.0 characterization remains the next step.
