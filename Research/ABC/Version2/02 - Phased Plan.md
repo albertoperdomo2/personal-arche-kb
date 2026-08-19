@@ -74,13 +74,14 @@ Figure 1 shows the four scheduled tracks — all single-engine vLLM work. The de
 
 **Method.** Full build guide in [[03 - Event-Driven Temperature Heuristic Implementation Guide]]. Summary: contiguous prefix bundles; async residency state machine; deadline gate (promote bundle B only when predicted lead time H exceeds calibrated prefetch latency); non-evicting speculative reservation; terminal-partition accounting. Validate on the pinned workload at concurrency 32 and 64: V2.1 vs. V1 N=100 vs. reactive baseline, ≥3 paired repetitions, node-swapped.
 
-**Exit criteria (all required).**
+**Exit criteria (all required).** Accounting is **per offload key (chunk)** in both V1 and V2 — V1's "blocks" were keys (25,600 = 100 chunks × 256 requests) — with bundle-level statistics reported additionally. The V1 baseline is restated on V2 denominators: V1 `attempted` ≡ V2 `considered`; V1 `promoted` ≡ V2 `submitted`. Comparisons never mix denominators:
 
-1. `late/considered` and `absent/submitted` strictly lower than the V1 concurrency-64 baseline (42.39% late/promoted, 37.78% load_failed/promoted — restated on the new accounting);
-2. `useful/considered` materially higher than V1's `useful/attempted` (15.81%), with the denominator honestly including absent, gate-rejected, capacity-skipped, and unresolved bundles;
-3. zero speculative-caused evictions of demand-useful blocks (or bounded and counted, if the bounded-budget variant is chosen);
-4. TTFT/E2E within predeclared non-inferiority bounds vs. reactive baseline, with improvement where H is sufficient;
-5. no correctness or request-completion failures.
+1. **Submission failure (H1):** `load_failed/submitted` ≤ 10%, vs. V1's `load_failed/promoted` = 37.78% at concurrency 64 — same numerator semantics, same denominator semantics.
+2. **Readiness:** `late/submitted` ≤ 21%, vs. V1's `late/promoted` = 42.39% at concurrency 64; readiness-at-first-demand reported per key.
+3. **Yield:** `useful/considered` > V1's `useful/attempted` = 15.81% by a predeclared margin. `secondary_absent/considered` is reported as **candidate composition** — it has no V1 analog (V1's absent keys surfaced as load failures) and is never compared to a failure rate.
+4. **Non-eviction:** zero speculative-caused evictions of demand-useful blocks (or bounded and counted, if the bounded-budget throttle is added).
+5. **Latency:** TTFT/E2E within predeclared non-inferiority bounds vs. reactive baseline, with improvement where `H` is sufficient.
+6. **Correctness:** no correctness or request-completion failures.
 
 ## V2.2 — Lifecycle-event prefetch via out-of-band control (week 4–6.5)
 
@@ -90,7 +91,9 @@ Figure 1 shows the four scheduled tracks — all single-engine vLLM work. The de
 
 1. Out-of-band, session-addressed control API (tool-call start/end, handoff signals) — request-scoped `kv_transfer_params` cannot carry these early enough; the API is a V2.2 deliverable, with the AgentX harness or router as the event source.
 2. Versioned session prefix registry: ordered, versioned prefix chains per session with lifecycle state — not a set-union of hashes.
-3. Promote the last confirmed reusable prefix during the external-work window; demote/stop promoting on tool-call start.
+3. **Unambiguous event timeline.** Exactly one policy governs the tool window:
+   - At `tool_call_start(session, expected_duration=D)`: (a) cancel the session's pending/unsubmitted prefetch work and stop spending budget on it — "demotion" means **loss of scheduling priority, never active data movement** (resident blocks stay put; natural recency and the normal cascade own their lifecycle); (b) if `D` is declared and `D > L_prefetch(B_resume)` for the session's last confirmed reusable prefix `B_resume`, begin promoting `B_resume` **immediately** — the tool window itself is the lead time `H = D`, which is precisely what makes the transfer hidable; (c) if `D` is undeclared or unreliable, fall back to promotion at `tool_call_end` (admission-equivalent, partial hiding).
+   - Completion prediction comes from the agent runtime's declared expected duration, calibrated offline in V2.0 against observed tool windows in the pinned trace. There is no separate "demote the data" action at any point in the timeline.
 
 **Exit criteria.** Better ready-at-demand and critical-path savings than the admission-only controller under matched workload and pressure; otherwise H3 is falsified and admission-only remains the claim.
 

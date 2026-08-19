@@ -4,7 +4,7 @@ date: "2026-08-19"
 type: "research-validation"
 experiment: "Activity-Based KV Cache Tier Placement"
 team: "PSAP"
-status: "conditionally-valid-revision-required"
+status: "resolved-incorporated"
 scope: "Version2 proposition, research basis, implementation assumptions, and hypotheses"
 codebase: "local vLLM experimental/naive-proactive-prefetching branch, inspected 2026-08-19"
 ---
@@ -273,3 +273,32 @@ Proceed with V2.0 characterization and a guide revision. V2.1 may begin only aft
 - [[../Methodology/06 - Deep Speculative Prefetching and Temperature Characterization|Deep speculative prefetching research synthesis]]
 - [[00 - Index|Version2 index]]
 - [[../00 - Index|ABC project index]]
+
+## Resolution addendum (2026-08-19)
+
+**Status update: the revisions required by this review are complete.** Documents 01–03 were revised on 2026-08-19 and all nine blocking corrections were incorporated. The original review above is preserved unmodified as the audit record; this addendum is the resolution record.
+
+### Resolution of the nine blocking corrections
+
+1. Degenerate admission scorer → selection redefined over ordered contiguous prefix bundles; admission-only residency/deadline gating is V2.1; lifecycle-event temperature deferred to V2.2 (docs 01, 02, 03 §2).
+2. Async residency → explicit state machine `PENDING_LOOKUP → RESIDENT | ABSENT → GATE → SUBMITTED → READY | LATE | FAILED` with deadlines, cancellation, duplicate suppression, and bounded pending state (03 §3.2).
+3. Non-eviction → `try_reserve_no_evict` reservation consumed by `_initiate_promotion(..., reserved=…)` with exactly one allocation per key; cancellation via `complete_write(success=False)` (03 §3.4).
+4. AET → removed as a per-key predictor; retained only as a candidate global pressure signal after trace validation (01, 02 V2.3).
+5. Cost gate → common-unit, lead-time-aware utility $U(B)$; shadow mode until V2.0 calibration lands (03 §3.3).
+6. Tool-window events → out-of-band session-addressed control API in V2.2; request-scoped metadata limited to admission (02 V2.2, 03 §3.6).
+7. Multi-tier overclaim → V2.1 scoped to secondary→CPU promotion; placement split into separate control surfaces (01, 02 V2.3).
+8. Workload provenance → pinned `semianalysisai/cc-traces-weka-062126` (01, 02, 03).
+9. Denominator → terminal-partition accounting with `useful/considered` as the stable yield metric (02, 03 §3.5).
+
+### Follow-up refinements (second review round, 2026-08-19)
+
+Six further issues were raised after the first revision and incorporated the same day:
+
+1. This document's status became stale → this addendum.
+2. Bounded budget ≠ non-eviction → reservation-into-promotion flow specified without double allocation (03 §3.4).
+3. Bundle semantics → candidates begin at the primary-residency frontier: $B = [k_m…k_j]$ with $[k_0…k_{m-1}]$ already resident; explicit O(n) selection algorithm (03 §2, §3.2).
+4. Mixed denominators/units in V2.1 exit criteria → V1 baseline restated per offload key (`attempted ≡ considered`, `promoted ≡ submitted`); `load_failed/submitted` for submission failure, `secondary_absent/considered` for candidate composition, `late/submitted` for readiness (02 V2.1 exit criteria).
+5. V2.2 event-timeline ambiguity → single policy: `tool_call_start` cancels the session's pending prefetch and, when predicted duration $D > L_{\text{prefetch}}$, immediately triggers resume-prefix promotion inside the window; "demotion" means loss of scheduling priority, never active data movement (02 V2.2).
+6. Async-loop timing → remaining lead time recomputed at every re-drive; precise `on_schedule_end` ordering specified (03 §3.2, §3.7).
+
+**Verdict after resolution:** the proposition is sound and the phase structure is accepted for implementation planning. V2.0 characterization remains the next step.

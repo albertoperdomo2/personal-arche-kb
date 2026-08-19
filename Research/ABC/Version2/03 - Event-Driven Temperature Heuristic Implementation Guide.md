@@ -49,9 +49,18 @@ Upstream `vllm/v1/kv_offload` contains **no prefetch code** (verified: zero `pre
 
 ## 2. Definitions
 
-- **Prefix bundle** `B = [k_0, …, k_j]`: the ordered, contiguous first `j+1` offload keys of a request's key list. The policy chooses the bundle length `j+1` and which bundles earn budget — it never selects interior or discontinuous keys.
-- **Lead time `H`**: predicted time from prefetch submission to first demand. V2.1 estimator: queue position of the request × calibrated mean admission interval (constants from V2.0), bounded below by 0.
-- **Residency**: per-bundle membership state on each secondary tier, resolved asynchronously.
+- **Primary-residency frontier `m`**: the index of the first key in a request's ordered key list that is not already primary-resident (`HIT` or `HIT_PENDING`). `[k_0, …, k_{m-1}]` is guaranteed resident and needs no work.
+- **Prefix bundle** `B = [k_m, …, k_j]`: an ordered, contiguous slice of the request's key list **beginning at the frontier** `m` and extending through the last contiguous secondary-resident key `j`. The policy chooses the bundle end `j` and which bundles earn budget — it never selects interior or discontinuous keys, and never re-promotes what is already resident.
+- **Lead time `H` / remaining lead time `H_remaining`**: `H` is the predicted time from admission to first demand (V2.1 estimator: queue position × calibrated mean admission interval, constants from V2.0, bounded below by 0). `H_remaining = H − elapsed` is recomputed at every async re-drive; all gate and deadline decisions use `H_remaining`, never the stale admission-time estimate.
+- **Residency**: per-key membership state on each secondary tier, resolved asynchronously.
+
+**Selection algorithm (explicitly O(n) in the request's key count n):**
+
+1. **Frontier scan**: walk the ordered key list once; per key, `primary_tier.lookup` (O(1) dict get). Stop at the first key that is neither `HIT` nor `HIT_PENDING` → frontier `m`. Contiguity is free: the demand scan (`_maximal_prefix_lookup`, L547) breaks at the first MISS, so nothing before `m` needs work and nothing after a gap is usable.
+2. **Candidacy scan**: from `m`, walk once more; per key, issue the secondary tier `lookup` (async where the tier provides `AsyncLookupManager`). Keys resolving `RESIDENT` extend the candidate bundle; the first `ABSENT` key ends it at `j`. Pending keys stay `PENDING_LOOKUP` and are re-driven (§3.2); each key is visited once per pass and re-drives are bounded by deadline expiry.
+3. **Gate**: evaluate the deadline and $U([k_m…k_j])$ once per bundle (§3.3).
+
+No LRU rank scans, no nested loops, no per-key eviction countdowns anywhere in the design.
 
 ## 3. Design
 
@@ -80,7 +89,8 @@ Rules:
 
 - **Ownership**: the policy owns the pending set; `TieringOffloadingManager` only receives submission calls.
 - **Async drive**: `tier.lookup(key, req_context)` returning `RETRY`/pending keeps the bundle in `PENDING_LOOKUP`; the state is re-driven on each `on_schedule_end` (after the tier's async flush) until resolved or expired. Lookup pending is **never** counted as absence.
-- **Deadline**: a bundle still pending when its predicted `H` expires transitions to `LATE` and is cancelled (never submitted).
+- **Deadline**: a bundle still pending when its `H_remaining` reaches zero transitions to `LATE` and is cancelled (never submitted).
+- **Lead-time recomputation**: at every re-drive, `H_remaining` is recomputed (elapsed since admission, or refreshed from current queue position). Lookup delay consumes lead time; a bundle whose lookup resolves late may correctly fail the deadline it would have passed at admission.
 - **Cancellation**: on `on_request_finished` (manager ≈L691) and on `ScheduleEndContext.preempted_req_ids`, cancel the request's pending/unsubmitted bundles; call the tier's `AsyncLookupManager.cleanup(req_id)`.
 - **Duplicate suppression**: skip bundles already primary-resident (`primary_tier.lookup` short-circuit), already in `_chunks_being_loaded`, or already in the pending set.
 - **Bounded state**: `max_pending_bundles` config; overflow transitions to `capacity_skip`.
@@ -89,21 +99,24 @@ Rules:
 
 Promote bundle `B` only if both hold:
 
-1. **Deadline**: $H > L_{\text{prefetch}}(B)$ — the calibrated transfer time for the bundle (V2.0 constants), so the promotion can complete before first demand. V1's 98.50% lateness at concurrency 32 is what this gate exists to prevent.
+1. **Deadline**: $H_{\text{remaining}} > L_{\text{prefetch}}(B)$ — the calibrated transfer time for the bundle (V2.0 constants), so the promotion can complete before first demand. V1's 98.50% lateness at concurrency 32 is what this gate exists to prevent.
 2. **Utility**: $U(B) > 0$, where
 
 $$U(B) = p_{\mathrm{use}}(B)\,\mathrm{saved\_critical\_path\_ms}(B) - \Delta Q_{\mathrm{active}}(B) - \mathbb{E}[C_{\mathrm{eviction}}(B)] - C_{\mathrm{failure}}(B)$$
 
-$$\mathrm{saved\_critical\_path\_ms}(B) = \max\left(0,\; L_{\mathrm{demand}}(B) - \max(0,\; L_{\mathrm{prefetch}}(B) - H)\right)$$
+$$\mathrm{saved\_critical\_path\_ms}(B) = \max\left(0,\; L_{\mathrm{demand}}(B) - \max(0,\; L_{\mathrm{prefetch}}(B) - H_{\text{remaining}})\right)$$
 
 All terms in milliseconds (or an explicitly declared equivalent), calibrated in V2.0. With the non-evicting allocator (§3.4), $\mathbb{E}[C_{\mathrm{eviction}}] = 0$ by construction. **Shadow mode**: until V2.0 calibration lands, the policy computes and logs scores/gate decisions but does not submit — V2.1 performance claims are never made on placeholder constants.
 
-### 3.4 Non-evicting speculative allocation
+### 3.4 Non-evicting speculative allocation (reservation → promotion, single allocation)
 
-The existing promotion path (`_initiate_promotion` ≈L380 → `primary_tier.prepare_write` → `CPUOffloadingManager.prepare_store` ≈L169) **evicts LRU blocks to make room**. Speculative work must not evict demand-useful blocks. Implement one of:
+Two problems must be solved together: the existing promotion path (`_initiate_promotion` ≈L380 → `primary_tier.prepare_write` → `CPUOffloadingManager.prepare_store` ≈L169) **evicts LRU blocks to make room**, and a policy-side reservation followed by an unmodified `_initiate_promotion` would **allocate twice**. A bounded speculative budget alone does not fix either — it throttles volume but the underlying allocation still evicts. The flow is therefore:
 
-- **Preferred**: `try_reserve_no_evict(keys) -> spec | None` on `CPUPrimaryTierOffloadingManager` — allocates only from currently-free blocks, refuses rather than evicting. Small, clean addition next to `prepare_store` in `cpu/manager.py`.
-- **Alternative**: a bounded speculative budget (`speculative_max_bytes`) tracked by the policy; submissions stop at the budget.
+1. **Reserve**: `CPUPrimaryTierOffloadingManager.try_reserve_no_evict(keys, req_context) -> PrepareStoreOutput | None` (new, next to `prepare_store` in `cpu/manager.py`). Allocates only from currently-free blocks — never calls `policy.evict`; returns `None` when free blocks are insufficient. The reservation **is** the allocation: blocks are created with `ref_cnt = -1` (in-flight), which keeps them out of `evictable_blocks`, so the reservation itself cannot be evicted while in flight.
+2. **Consume**: `_initiate_promotion(tier, key, req_context, *, reserved: PrepareStoreOutput | None = None)` (extended at ≈L380). When `reserved` is provided, it **skips its internal `prepare_write`** and builds the `PendingPromotion` from the reservation's block ids; when absent (the demand path), behavior is unchanged. Exactly one allocation per promoted key; zero speculative evictions.
+3. **Release on cancel**: deadline expiry, request finish, or preemption releases the reservation via `complete_write(keys, req_context, success=False)`, which removes and frees the blocks (existing `complete_store` failure behavior).
+
+A `speculative_max_bytes` budget may be added **on top** as a throttle on total outstanding speculative reservations, but it is a volume limiter, never the safety mechanism.
 
 Telemetry counts `capacity_rejected` and any speculative-caused eviction (target: zero; non-zero is a bug). If a later phase allows speculative eviction, its expected cost enters $U(B)$ explicitly.
 
@@ -125,25 +138,35 @@ V2.1 consumes only admission-scoped metadata via `req_context.kv_transfer_params
 
 `abc_session_id`/`abc_turn` feed bundle-level session bookkeeping only. **Tool-call and handoff events are out of scope for V2.1**: request-scoped metadata cannot arrive early enough to exploit the tool window (`tool_call_start` is knowable only after the model emits it; `tool_call_end` arrives with the next request). V2.2 specifies an out-of-band, session-addressed control API and a versioned session prefix registry; see [[02 - Phased Plan]].
 
-### 3.7 Data flow at admission
+### 3.7 Data flow and precise `on_schedule_end` ordering
+
+At admission:
 
 ```
 Scheduler.add_request
   → connector.on_new_request(request)                       # scheduler.py L2235 → offloading/scheduler.py L806
       → build/refresh RequestOffloadState.offload_keys      # full future key list (existing code)
-      → policy.on_admission(keys, req_context)              # NEW: BundleBuilder → ResidencyTracker
-  ... per step, end of step: manager.on_schedule_end        # existing ≈L728
-      → policy.on_schedule_end(): re-drive PENDING_LOOKUP   # after tier async flush
-          → RESIDENT bundles: DeadlineGate → SpeculativeAllocator
-              → reserve ok → _initiate_promotion(tier, key) # existing ≈L380
-              → refused    → capacity_skip (counted)
-      → _flush_pending_promotions()                         # existing ≈L429
-  ... promotion lands (complete_write) ...
-  → first schedule attempt: _maximal_prefix_lookup          # existing L547 sees HIT/HIT_PENDING
-      → load_kv_async path → WAITING_FOR_REMOTE_KVS → resume
+      → policy.on_admission(keys, req_context)              # NEW: frontier scan → candidacy scan → PENDING_LOOKUP
 ```
 
-The only new manager-facing API is the policy's admission/schedule-end hooks; everything downstream reuses existing machinery. Batching, once-per-step gating, and dedup come for free.
+Per step, inside `manager.on_schedule_end` (≈L728), in this exact order:
+
+```
+1. _maybe_process_finished_jobs()        # existing, once per step: completed transfers committed (complete_write/complete_read)
+2. drain tier async-lookup results       # after the tiers' own flush; resolved lookups become consumable
+3. policy re-drive                       # consume RESIDENT/ABSENT; recompute H_remaining for all pending
+                                         # and resolved-ungated bundles; expire H_remaining ≤ 0 → LATE (cancelled)
+4. gate evaluation                       # RESIDENT bundles: deadline H_remaining > L_prefetch and U(B, H_remaining) > 0
+5. reservation                           # try_reserve_no_evict for gate winners, budget-capped; refusal → capacity_skip
+6. submission                            # _initiate_promotion(..., reserved=…) → _pending_load_submissions
+7. _flush_pending_promotions()           # existing ≈L429: batched tier.submit_load
+```
+
+Steps 2–6 are the policy's `on_schedule_end` hook, invoked by the manager **after** its own completion processing (step 1) and **before** the promotion flush (step 7). This ordering guarantees: lookup results from this step's flush are consumable in the same step; gate decisions always use post-lookup `H_remaining`; and submissions land in the same step's flush batch.
+
+After the promotion lands (`complete_write`), the first schedule attempt sees `HIT`/`HIT_PENDING` in `_maximal_prefix_lookup` (L547) and takes the existing `load_kv_async` → `WAITING_FOR_REMOTE_KVS` → resume path.
+
+The only new manager-facing API is the policy's admission/schedule-end hooks plus the `reserved` parameter on `_initiate_promotion`; everything downstream reuses existing machinery. Batching, once-per-step gating, and dedup come for free.
 
 ## 4. Config surface (`kv_connector_extra_config`)
 
@@ -177,10 +200,10 @@ Each step is independently verifiable; do not skip ahead.
 
 1. **Branch** from the local V1 tree at the repaired-image state. Existing tiering + admission/lookup suites green before any change.
 2. **`prefetch.py` skeleton**: `PrefetchPolicy` ABC, `BundleBuilder`, `ResidencyTracker` (state machine + deadlines + cancellation), `DeadlineGate`, `SpeculativeAllocator` interface, `Accounting`. Pure logic, unit-testable without vLLM. *Verify: state-machine transition tests, including expiry→LATE and cancel-on-preempt; bundle contiguity tests.*
-3. **Non-evicting reservation**: `try_reserve_no_evict` in `cpu/manager.py` + alias on `CPUPrimaryTierOffloadingManager`. *Verify: under a full tier, reservation refuses and the LRU OrderedDict is unchanged.*
+3. **Non-evicting reservation + single-allocation promotion**: `try_reserve_no_evict` in `cpu/manager.py` + alias on `CPUPrimaryTierOffloadingManager`; extend `_initiate_promotion` with the `reserved` parameter (skips `prepare_write` when provided); cancellation via `complete_write(success=False)`. *Verify: under a full tier, reservation refuses and the LRU OrderedDict is unchanged; a reserved-then-promoted key allocates exactly one block; a cancelled reservation frees its blocks.*
 4. **Config plumbing** through `TieringOffloadingSpec` → manager; policy constructed when `enabled`. *Verify: parse test; disabled-by-default no-op.*
 5. **Admission hook**: `policy.on_admission` from `OffloadingConnectorScheduler.on_new_request` (L806) after `offload_keys` are built. *Verify: registry/pending contents in a manager-level test with synthetic requests.*
-6. **Schedule-end re-drive + submission**: `policy.on_schedule_end` wired before `_flush_pending_promotions`; submissions via `_initiate_promotion` after reservation. *Verify: with the `example` in-memory tier, resident bundles are submitted, absent bundles count `secondary_absent`, pending bundles survive to the next step.*
+6. **Schedule-end re-drive + submission**: `policy.on_schedule_end` wired in the §3.7 ordering (after completion processing, before `_flush_pending_promotions`); submissions via `_initiate_promotion(..., reserved=…)`. *Verify: with the `example` in-memory tier, resident bundles are submitted, absent bundles count `secondary_absent`, pending bundles survive to the next step, and a bundle whose `H_remaining` expires mid-lookup transitions to `LATE` without submission.*
 7. **Accounting + metrics**: terminal partition counters + transition log, surfaced via `get_stats()` (≈L810) and the connector's `build_prom_metrics`. *Verify: partition sums to `considered` in the example-tier test.*
 8. **Shadow-mode run**: deploy with `shadow_mode: true` on the pinned workload (C32/C64); collect gate decisions, H estimates, and would-be submissions. *Verify: no transfers occur; decision logs match offline replay.*
 9. **Regression test**: real-manager scheduler test mirroring the V1 wiring test. *Verify: full focused suite green.*

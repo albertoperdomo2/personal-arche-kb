@@ -28,7 +28,7 @@ On 2026-08-19 an independent theoretical and code-grounded review ([[04 - Theore
 
 ## Current status
 
-- **Validity:** conditionally valid; the nine blocking corrections from [[04 - Theoretical Validation|04]] are incorporated into 01–03. V2.1 implementation may begin only when the eight start gates in [[02 - Phased Plan|02]] are satisfied.
+- **Validity:** sound after two review rounds (2026-08-19): the nine blocking corrections and six follow-up refinements are incorporated into 01–03; see the resolution addendum in [[04 - Theoretical Validation|04]]. V2.1 implementation may begin only when the eight start gates in [[02 - Phased Plan|02]] are satisfied.
 - **Corrected proposition:** an event- and queue-informed controller can reduce critical-path KV retrieval for reusable, contiguous session prefixes by scheduling residency-verified promotions only when predicted lead time exceeds calibrated transfer time and expected latency benefit exceeds contention and eviction cost.
 - **Next step:** V2.0 characterization/calibration — pin the immutable workload (`semianalysisai/cc-traces-weka-062126`), measure lead-time and transfer distributions, run the resident-key microbenchmark, quantify residency/capacity/eviction behavior, evaluate event predictors offline, and declare H1–H5 acceptance bounds.
 - **Code grounding:** upstream `vllm-project/vllm` @ `v0.27.0` (commit `4bdc8a78`, GitHub Connector, 2026-08-18); local `experimental/naive-proactive-prefetching` branch (theoretical review, 2026-08-19).
