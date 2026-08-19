@@ -12,7 +12,7 @@ status: "active"
 
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
 - [[Methodology/00 - Index|Methodology and Implementation]] — experiment definitions, plans, implementation guides, and design discussions.
-- [[Version2/00 - Index|Version 2 — Proactive Speculative Prefetching]] — deterministic, event- and queue-informed program; revised 2026-08-19 to incorporate all nine corrections from the theoretical validation. V2.0 characterization is the next step.
+- [[Version2/00 - Index|Version 2 — Proactive Speculative Prefetching]] — deterministic, event- and queue-informed program. The first five-cell V2.1 run validates the control plane and safety behavior but found zero live submissions because no truly free CPU KV slots remained.
 
 ## Methodology and implementation
 
@@ -32,6 +32,7 @@ status: "active"
 - [[Reports/2026-08-18 - Phase 1 admission prefetch repaired-image validation|2026-08-18 — Phase 1 admission prefetch repaired-image validation]] — mechanism accepted; performance remains provisional.
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|2026-08-18 — AgentX Weka admission prefetch first exploratory run]] — valid negative policy result at concurrency 32: first-N prefetch ran, but N=100 was mostly redundant, failed, and late.
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|2026-08-18 — AgentX Weka admission prefetch at concurrency 64]] — Phase 1 queue-sensitivity supported: more waiting sharply increased useful yield and reduced lateness; performance remains inconclusive.
+- [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
 
@@ -59,6 +60,14 @@ The no-go issues are the uniform-Hot admission scorer, missing ordered contiguou
 
 The next Version2 action is V2.0 characterization/calibration, followed by revision of [[Version2/01 - Strategy and Re-sequencing|01]], [[Version2/02 - Phased Plan|02]], and [[Version2/03 - Event-Driven Temperature Heuristic Implementation Guide|03]]. Implementation of V2.1 is gated on that revision.
 
+## Version 2 first execution checkpoint — 2026-08-19
+
+The first five-cell V2.1 batch produced a partial mechanism success. Shadow mode found 171 gate-approved bundles / 10,832 keys. Live mode submitted zero keys: 33 resolved bundles became primary-redundant before manager submission and 132 were refused on their first missing key by the non-evicting allocator. The per-key terminal partition balanced exactly in shadow and live, disabled cells exposed no V2 metrics, and the deadline/transfer model calibrated correctly.
+
+This is not a live-prefetch performance proof. It is evidence that V2.1's control plane and safety behavior work and that the next blocker is explicit speculative headroom. V1 N=100 remains only a negative control: it promoted 18,144 keys, failed 5,739, wasted 10,751, used 1,641, logged 67 missing-file jobs during profiling, and collapsed throughput.
+
+The next implementation must reserve a bounded speculative block budget, split capacity reasons, and expose true allocated/free/evictable/speculative CPU block gauges. Do not restore unrestricted eviction.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -77,20 +86,21 @@ The next Version2 action is V2.0 characterization/calibration, followed by revis
 - AgentX Weka concurrency-32 N=100 treatment (policy ineffective; performance inconclusive): [915dac9e54d54b18b9b5a79ac8f69c2b](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/915dac9e54d54b18b9b5a79ac8f69c2b?workspace=benchflow)
 - AgentX Weka concurrency-64 N=0 control: [beaf48bcd79d46a1b155ba9af508ec2c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/beaf48bcd79d46a1b155ba9af508ec2c?workspace=benchflow)
 - AgentX Weka concurrency-64 N=100 treatment (mechanism accepted; performance inconclusive): [6febe03b9d1f4b4e95f628a34e59c038](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/6febe03b9d1f4b4e95f628a34e59c038?workspace=benchflow)
+- V2.1 reactive overlay: [afce8c043cfe4e01b6e65ed8b26cf69d](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/afce8c043cfe4e01b6e65ed8b26cf69d?workspace=benchflow)
+- V2.1 shadow: [7a5ba9c3e31c4a1c9dd311b5555d27fa](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/7a5ba9c3e31c4a1c9dd311b5555d27fa?workspace=benchflow)
+- V1 N=100 negative control: [3deeb035004e46a291c4975560e5e0d5](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/3deeb035004e46a291c4975560e5e0d5?workspace=benchflow)
+- V2.1 live, zero submitted: [6ccc8c955f6149f488bc6c488f95d927](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/6ccc8c955f6149f488bc6c488f95d927?workspace=benchflow)
+- V2.1 reactive stock: [4111b847dba14ae0a8f6b6617aec939e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/4111b847dba14ae0a8f6b6617aec939e?workspace=benchflow)
 
 ## Next experiment
 
-Phase 1 wiring and queue sensitivity are now supported across the repaired GuideLLM run and both AgentX pressure points. The next experiment should tune N and establish repeatability rather than merely add more pressure.
+Version2 is now the active experiment. Before another performance comparison:
 
-1. run `N ∈ {0, 25, 50, 100, 200}` with at least three balanced/interleaved repetitions;
-2. retain concurrency 32 as the lower-pressure workload and concurrency 64 as the queue-pressure point; add an intermediate concurrency only if a moderate sustained queue is needed;
-3. swap or balance the `…-6kl5z` and `…-mt46x` node assignments so node and treatment are no longer confounded;
-4. require exact selection accounting and report useful/attempted, load_failed/promoted, late/promoted, redundant/attempted, unresolved state, preemptions, and GPU KV occupancy before latency;
-5. add N=400 only if N=200 does not create capacity, storage, tracking, or preemption pressure;
-6. if all first-N settings remain mostly redundant or missing, stop increasing N and move selection to a later window or a reuse/residency heuristic.
+1. split capacity skip by hard-cap, pending-bundle, step-budget, speculative-budget, manager-free-slot, and recheck-redundant reasons;
+2. expose total allocated, truly free, evictable demand, speculative-ready, read-pending, and write-pending CPU blocks;
+3. reserve 64, 256, and 1,024 speculative blocks (about 128 MiB, 512 MiB, and 2 GiB in this run) without allowing speculative work to evict demand data;
+4. rerun stock, overlay, shadow, and live with at least three randomized, node-paired repetitions;
+5. reject any live mechanism cell with zero submitted promotions, missing-file loads, terminal-accounting drift, or speculative eviction of demand data;
+6. analyze TTFT and throughput only after submitted promotions complete successfully and at least some become useful.
 
-The Phase 1 exit criterion is repeatable useful promotion with reduced lateness and no correctness/request failures. A repeatable performance win is the next tuning question, not a prerequisite for accepting that the POC wiring works.
-
-### Version2 next action
-
-The V1 N sweep remains useful as a blind-policy baseline, but it must not supply Version2 cost constants from uncontrolled load failures or node-confounded runs. Version2 should first execute the controlled V2.0 resident-key and lead-time characterization defined in [[Version2/04 - Theoretical Validation|the validation record]], declare numerical acceptance bounds, and then revise the implementation guide before coding.
+The V1 N sweep is no longer the primary next step. V1 should remain a short negative safety control, not a tuning candidate.
