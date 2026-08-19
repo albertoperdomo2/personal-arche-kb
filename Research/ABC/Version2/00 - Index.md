@@ -13,15 +13,16 @@ Version 2 pursues **proactive speculative prefetching** of KV cache blocks acros
 
 On 2026-08-19 an independent theoretical and code-grounded review ([[04 - Theoretical Validation|04]]) found the initial V2.1 design conditionally valid but not implementation-ready, and issued nine blocking corrections. **All nine were accepted and documents 01–03 were revised the same day.** The program now follows the corrected sequence in document 02.
 
-**V2.1 is now implemented** in the local vLLM tree, in shadow mode by default, pending V2.0 calibration. See [[05 - V2.1 Implementation Record|05]].
+**V2.1 is implemented** on the fork branch [`albertoperdomo2/vllm @ experimental/v2-admission-prefetch`](https://github.com/albertoperdomo2/vllm/tree/experimental/v2-admission-prefetch), shadow mode by default, not yet benchmarked. Start with [[06 - 2026-08-19 - V2.1 Implementation Deep Dive|06]].
 
 ## Documents
 
 - [[01 - Strategy and Re-sequencing|01 — Strategy and Re-sequencing]] — V2 problem statement (no learned model), what changes versus V1, what is preserved, the narrowed novelty claim, and the nine standing corrections. **Revised 2026-08-19.**
 - [[02 - Phased Plan|02 — Phased Plan]] — corrected plan: V2.0 characterization/calibration → V2.1 residency/deadline admission prefetch → V2.2 lifecycle-event prefetch via out-of-band control → V2.3 retention + placement within vLLM + RFC. llm-d scale-out is V2.4, post-proof and unscheduled. Gated V2.1 start, hypotheses H1–H5, terminal-partition accounting. **Revised 2026-08-19.**
-- [[03 - Event-Driven Temperature Heuristic Implementation Guide|03 — Implementation Guide]] — vLLM `v0.27.0`-grounded build guide: ordered contiguous prefix bundles, async residency state machine, deadline + utility gate, non-evicting speculative allocation, shadow mode. **Revised 2026-08-19.**
+- [[03 - Event-Driven Temperature Heuristic Implementation Guide|03 — Implementation Guide]] — vLLM `v0.27.0`-grounded build guide: ordered contiguous prefix bundles, async residency state machine, deadline + utility gate, non-evicting speculative allocation, shadow mode. **Revised 2026-08-19.** Superseded on three points by 06: the utility gate, the two-phase reservation, and same-step lookup consumability.
 - [[04 - Theoretical Validation|04 — Theoretical Validation]] — the adversarial review: conditional validity verdict, code and research audit, blocking assumptions, corrected proposition, revised phases, and falsifiable hypotheses.
-- [[05 - V2.1 Implementation Record|05 — V2.1 Implementation Record]] — what was built, the three places the code forced a deviation from guide 03, the flaw-class test map, and how to enable it. **New 2026-08-19.**
+- [[05 - V2.1 Implementation Record|05 — V2.1 Implementation Record]] — first implementation note. **Superseded by 06**; retained as the record of the state before the code review and the self-calibrating cost model.
+- [[06 - 2026-08-19 - V2.1 Implementation Deep Dive|06 — V2.1 Implementation Deep Dive]] — **the current reference.** What was built and why, the mechanism explained end to end with code and equations, the KB-derived constants, the code-review findings and fixes, observability, the five-cell run plan, the falsifiable expectation, and related work. **New 2026-08-19.**
 
 ## Related
 
@@ -31,9 +32,10 @@ On 2026-08-19 an independent theoretical and code-grounded review ([[04 - Theore
 
 ## Current status
 
-- **Validity:** sound after two review rounds (2026-08-19): the nine blocking corrections and six follow-up refinements are incorporated into 01–03; see the resolution addendum in [[04 - Theoretical Validation|04]]. A third, code-grounded re-validation confirmed the design against the local tree.
+- **Validity:** sound after three review rounds (2026-08-19): nine blocking corrections, six follow-up refinements, and a code-grounded re-validation against the local tree. See the addenda in [[04 - Theoretical Validation|04]].
 - **Corrected proposition:** an event- and queue-informed controller can reduce critical-path KV retrieval for reusable, contiguous session prefixes by scheduling residency-verified promotions only when predicted lead time exceeds calibrated transfer time and expected latency benefit exceeds contention and eviction cost.
-- **Implementation:** V2.1 built on branch `experimental/v2-admission-prefetch` (commit `4ea5fb8fb9`), 16 files, all eight start gates satisfied. Shadow mode defaults **on**; live submission is a config flip after V2.0. Details in [[05 - V2.1 Implementation Record|05]].
-- **Next step:** V2.0 characterization/calibration — pin the immutable workload (`semianalysisai/cc-traces-weka-062126`), measure lead-time and transfer distributions, run the resident-key microbenchmark, quantify residency/capacity/eviction behavior, evaluate event predictors offline, and declare H1–H5 acceptance bounds. The implemented shadow mode is now the instrument for the lead-time half of that work.
-- **Code grounding:** upstream `vllm-project/vllm` @ `v0.27.0` (commit `4bdc8a78`, GitHub Connector, 2026-08-18); local `experimental/naive-proactive-prefetching` branch (theoretical review, 2026-08-19); `experimental/v2-admission-prefetch` (implementation, 2026-08-19).
-- **V1 state:** mechanism proven; performance inconclusive; blind first-N selection reached its useful ceiling and remains a baseline, not the Version2 policy. It stays selectable in the same image for the comparison cell.
+- **Implementation:** 17 files, +4,425 lines, 82 new tests in the dedicated suites. Three commits on `experimental/v2-admission-prefetch`. Image `quay.io/rh-ee-aperdomo/vllm:v0.27.0-prefetch-v2` overlays the change onto `vllm/vllm-openai:v0.27.0` and serves every benchmark cell by config alone.
+- **Cost model is self-calibrating:** transfer cost is fitted from real promotions, including demand-driven ones, so it is calibrated in shadow mode before any speculative byte moves. Four uncalibrated knobs and the inert utility gate were removed as a result.
+- **Next step:** the five-cell sequence in [[06 - 2026-08-19 - V2.1 Implementation Deep Dive|06]] §12. Cell 3 (shadow) doubles as V2.0 characterization and is a decision gate for cells 4 and 5.
+- **Falsifiable expectation:** Little's law on the C64 run gives ~9.2 s of queue wait against ~220 ms of transfer for a 100-chunk bundle, so the deadline gate should rarely reject and residency should be the binding constraint.
+- **V1 state:** mechanism proven; performance inconclusive; blind first-N selection reached its useful ceiling and remains a baseline, not the Version2 policy.
