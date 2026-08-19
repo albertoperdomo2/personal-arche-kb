@@ -28,7 +28,7 @@ Shortest credible path to a demonstrable, deterministic prefetch heuristic with 
       {"phase": "V2.0 Characterization + calibration", "start": 0, "end": 1.5, "track": "bench"},
       {"phase": "V2.1 Residency/deadline admission prefetch", "start": 1.5, "end": 4, "track": "code"},
       {"phase": "V2.2 Lifecycle-event prefetch (out-of-band)", "start": 4, "end": 6.5, "track": "code"},
-      {"phase": "V2.3 Retention, placement, routing + RFC", "start": 2, "end": 7, "track": "upstream"}
+      {"phase": "V2.3 Retention + placement (vLLM) + RFC", "start": 2, "end": 7, "track": "upstream"}
     ]
   },
   "mark": {"type": "bar", "height": 18},
@@ -94,18 +94,30 @@ Figure 1 shows the four tracks. The demonstration milestone is V2.1 at ~week 4. 
 
 **Exit criteria.** Better ready-at-demand and critical-path savings than the admission-only controller under matched workload and pressure; otherwise H3 is falsified and admission-only remains the claim.
 
-## V2.3 — Retention, placement, and routing + RFC (week 2–7, parallel)
+## V2.3 — Retention and placement within vLLM + RFC (week 2–7, parallel)
 
-**Objective.** Test cross-request and multi-replica policy value, and stake the upstream claim.
+**Objective.** Complete the single-engine control surfaces and stake the upstream claim. **Scope is vLLM only** — cluster routing is explicitly deferred to V2.4.
 
 **Method.**
 
 1. Retention: TTL/recency/inter-reuse-interval features first; AET-like global pressure only after trace validation.
-2. Routing: combine predicted future reuse/deadlines with llm-d's existing exact prefix-residency + load signals; the baseline for any novelty claim is llm-d precise prefix-cache-aware routing, not naive load balancing.
-3. Treat GPU placement, CPU retention, and secondary persistence as separate control surfaces with separate ownership and cost — do not imply a unified multi-tier placer.
-4. RFC: design doc circulated internally by ~week 4, posted upstream (vllm-project, llm-d) by ~week 7.
+2. Treat GPU placement, CPU retention, and secondary persistence as separate control surfaces with separate ownership and cost — do not imply a unified multi-tier placer.
+3. RFC: design doc (deterministic prefetch policy, residency/deadline gating, non-evicting speculative allocation, pluggable policy idiom) circulated internally by ~week 4, posted to vllm-project by ~week 7.
 
-**Exit criteria.** Incremental benefit over exact-residency plus queue/load routing under matched placement, workload, and capacity, with bounded eviction, bandwidth, and tail-latency cost; RFC posted.
+**Exit criteria.** Each vLLM-side control surface demonstrates its incremental benefit under matched workload and capacity, with bounded eviction, bandwidth, and tail-latency cost; RFC posted to vllm-project.
+
+## V2.4 — Scale-out to llm-d (post-proof, not yet scheduled)
+
+**Objective.** Scale the proven single-engine mechanism to the cluster. **Starts only after V2.1/V2.2 demonstrate the single-engine win.**
+
+**Method (sketch, to be expanded when scheduled).**
+
+1. Export predicted-reuse/deadline summaries from the connector in a form the llm-d Endpoint Picker can consume.
+2. Routing: combine predicted future reuse/deadlines with llm-d's existing exact prefix-residency + load signals; the baseline for any novelty claim is llm-d precise prefix-cache-aware routing, not naive load balancing (hypothesis H5).
+3. Session-migration prefetch between replicas, building on the two-replica AgentX setup used in the Gemma two-replica runs.
+4. llm-d RFC following the vLLM proof.
+
+**Exit criteria.** Incremental benefit over exact-residency plus queue/load routing under matched placement, workload, and capacity, with bounded eviction, bandwidth, and tail-latency cost.
 
 ## Hypotheses and falsification criteria
 
