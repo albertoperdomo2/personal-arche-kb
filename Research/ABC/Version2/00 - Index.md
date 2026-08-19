@@ -1,22 +1,24 @@
 ---
-title: "ABC Version 2 — Event-Driven Temperature Prefetching"
+title: "ABC Version 2 — Proactive Speculative Prefetching"
 date: "2026-08-19"
 type: "research-index"
 experiment: "Activity-Based KV Cache Tier Placement"
 team: "PSAP"
-status: "active-revision-required"
+status: "active"
 ---
 
 # ABC Version 2
 
-Version 2 explores deterministic, event- and queue-informed KV promotion before learned prediction. The direction is conditionally valid, but the 2026-08-19 theoretical and code-grounded review found that the current V2.1 design is not implementation-ready. Documents 01–03 are retained as design inputs and must be revised to the validated sequence in document 04.
+Version 2 pursues **proactive speculative prefetching** of KV cache blocks across storage tiers, driven by deterministic heuristics over signals the serving stack already has — queue state and lead time, exact block residency, session lifecycle, and measured transfer costs. No learned model is involved anywhere in the program; prediction is derived from orchestration structure, not from training.
+
+On 2026-08-19 an independent theoretical and code-grounded review ([[04 - Theoretical Validation|04]]) found the initial V2.1 design conditionally valid but not implementation-ready, and issued nine blocking corrections. **All nine were accepted and documents 01–03 were revised the same day.** The program now follows the corrected sequence in document 02.
 
 ## Documents
 
-- [[01 - Strategy and Re-sequencing|01 — Strategy and Re-sequencing]] — why V2 exists, what changes versus the original four-phase plan, what is preserved, and where the defensible win is.
-- [[02 - Phased Plan|02 — Phased Plan]] — compressed four-track plan (V2.0–V2.3) with objectives, exit criteria, timeline, and the critical path to a demonstrable heuristic.
-- [[03 - Event-Driven Temperature Heuristic Implementation Guide|03 — Implementation Guide]] — original vLLM `v0.27.0`-grounded build guide; retained as a design input and marked for revision before implementation.
-- [[04 - Theoretical Validation|04 — Theoretical Validation]] — conditional validity verdict, code and research audit, blocking assumptions, corrected proposition, revised phases, and falsifiable hypotheses.
+- [[01 - Strategy and Re-sequencing|01 — Strategy and Re-sequencing]] — V2 problem statement (no learned model), what changes versus V1, what is preserved, the narrowed novelty claim, and the nine standing corrections. **Revised 2026-08-19.**
+- [[02 - Phased Plan|02 — Phased Plan]] — corrected four-track plan (V2.0–V2.3): characterization/calibration → residency/deadline admission prefetch → lifecycle-event prefetch via out-of-band control → retention, placement, routing + RFC. Gated V2.1 start, hypotheses H1–H5, terminal-partition accounting. **Revised 2026-08-19.**
+- [[03 - Event-Driven Temperature Heuristic Implementation Guide|03 — Implementation Guide]] — vLLM `v0.27.0`-grounded build guide: ordered contiguous prefix bundles, async residency state machine, deadline + utility gate, non-evicting speculative allocation, shadow mode. **Revised 2026-08-19.**
+- [[04 - Theoretical Validation|04 — Theoretical Validation]] — the adversarial review: conditional validity verdict, code and research audit, blocking assumptions, corrected proposition, revised phases, and falsifiable hypotheses.
 
 ## Related
 
@@ -26,9 +28,8 @@ Version 2 explores deterministic, event- and queue-informed KV promotion before 
 
 ## Current status
 
-- **Validity:** conditionally valid; revision required before implementation. The working decision is [[04 - Theoretical Validation|04 — Theoretical Validation]], not the earlier “ready to start” statement.
-- **Supported premises:** workflow and queue signals can provide useful advance information; V1 proves admission-time promotion mechanically and supports lead time as a control variable; deterministic-before-ML remains the correct sequence.
-- **No-go blockers in the current V2.1 design:** admission scoring degenerates to uniform Hot candidates; candidate selection is not defined as an ordered contiguous prefix bundle; async filesystem lookup lacks a re-driven state machine; speculative CPU allocation can evict despite the no-evict claim; AET is misused as a per-key countdown; the cost gate omits lead-time hiding and eviction cost; request-scoped metadata cannot expose the full tool window; and the metric denominator can hide residency misses.
-- **Corrected next step:** V2.0 characterization/calibration—standardize the immutable workload, measure lead-time and transfer distributions, run a controlled resident-key microbenchmark, quantify residency/capacity/eviction behavior, and evaluate event predictors offline. Revise documents 01–03 before implementing V2.1.
-- **Code grounding:** the theoretical review inspected the local `experimental/naive-proactive-prefetching` branch on 2026-08-19 and checked current primary research plus vLLM/llm-d documentation.
+- **Validity:** conditionally valid; the nine blocking corrections from [[04 - Theoretical Validation|04]] are incorporated into 01–03. V2.1 implementation may begin only when the eight start gates in [[02 - Phased Plan|02]] are satisfied.
+- **Corrected proposition:** an event- and queue-informed controller can reduce critical-path KV retrieval for reusable, contiguous session prefixes by scheduling residency-verified promotions only when predicted lead time exceeds calibrated transfer time and expected latency benefit exceeds contention and eviction cost.
+- **Next step:** V2.0 characterization/calibration — pin the immutable workload (`semianalysisai/cc-traces-weka-062126`), measure lead-time and transfer distributions, run the resident-key microbenchmark, quantify residency/capacity/eviction behavior, evaluate event predictors offline, and declare H1–H5 acceptance bounds.
+- **Code grounding:** upstream `vllm-project/vllm` @ `v0.27.0` (commit `4bdc8a78`, GitHub Connector, 2026-08-18); local `experimental/naive-proactive-prefetching` branch (theoretical review, 2026-08-19).
 - **V1 state:** mechanism proven; performance inconclusive; blind first-N selection reached its useful ceiling and remains a baseline, not the Version2 policy.

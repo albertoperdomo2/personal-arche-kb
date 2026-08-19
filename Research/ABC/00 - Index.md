@@ -12,7 +12,7 @@ status: "active"
 
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
 - [[Methodology/00 - Index|Methodology and Implementation]] — experiment definitions, plans, implementation guides, and design discussions.
-- [[Version2/00 - Index|Version 2 — Event- and Queue-Informed Prefetching]] — conditionally valid proposition; the 2026-08-19 theoretical review requires design and guide revision before implementation.
+- [[Version2/00 - Index|Version 2 — Proactive Speculative Prefetching]] — deterministic, event- and queue-informed program; revised 2026-08-19 to incorporate all nine corrections from the theoretical validation. V2.0 characterization is the next step.
 
 ## Methodology and implementation
 
