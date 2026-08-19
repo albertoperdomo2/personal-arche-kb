@@ -12,6 +12,7 @@ status: "active"
 
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
 - [[Methodology/00 - Index|Methodology and Implementation]] — experiment definitions, plans, implementation guides, and design discussions.
+- [[Version2/00 - Index|Version 2 — Event-Driven Temperature Prefetching]] — re-sequenced program (2026-08-18): strategy, compressed phased plan, and the vLLM v0.27.0-grounded implementation guide for the temperature heuristic.
 
 ## Methodology and implementation
 
