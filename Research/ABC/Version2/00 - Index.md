@@ -16,7 +16,7 @@ On 2026-08-19 an independent theoretical and code-grounded review ([[04 - Theore
 ## Documents
 
 - [[01 - Strategy and Re-sequencing|01 — Strategy and Re-sequencing]] — V2 problem statement (no learned model), what changes versus V1, what is preserved, the narrowed novelty claim, and the nine standing corrections. **Revised 2026-08-19.**
-- [[02 - Phased Plan|02 — Phased Plan]] — corrected four-track plan (V2.0–V2.3): characterization/calibration → residency/deadline admission prefetch → lifecycle-event prefetch via out-of-band control → retention, placement, routing + RFC. Gated V2.1 start, hypotheses H1–H5, terminal-partition accounting. **Revised 2026-08-19.**
+- [[02 - Phased Plan|02 — Phased Plan]] — corrected plan: V2.0 characterization/calibration → V2.1 residency/deadline admission prefetch → V2.2 lifecycle-event prefetch via out-of-band control → V2.3 retention + placement within vLLM + RFC. llm-d scale-out is V2.4, post-proof and unscheduled. Gated V2.1 start, hypotheses H1–H5, terminal-partition accounting. **Revised 2026-08-19.**
 - [[03 - Event-Driven Temperature Heuristic Implementation Guide|03 — Implementation Guide]] — vLLM `v0.27.0`-grounded build guide: ordered contiguous prefix bundles, async residency state machine, deadline + utility gate, non-evicting speculative allocation, shadow mode. **Revised 2026-08-19.**
 - [[04 - Theoretical Validation|04 — Theoretical Validation]] — the adversarial review: conditional validity verdict, code and research audit, blocking assumptions, corrected proposition, revised phases, and falsifiable hypotheses.
 

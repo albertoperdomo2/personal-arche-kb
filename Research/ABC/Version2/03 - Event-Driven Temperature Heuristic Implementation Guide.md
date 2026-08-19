@@ -196,7 +196,7 @@ Each step is independently verifiable; do not skip ahead.
 
 ## 7. What V2.1 deliberately excludes
 
-Lifecycle events via out-of-band control API, versioned session registry, dynamic gate thresholds (V2.2); retention features, AET-like global pressure, multi-replica routing, EPP export (V2.3); residual correction, quantization tiers, aLoRA reuse (parked — see [[01 - Strategy and Re-sequencing]]). Worker-side/layerwise changes: none.
+Lifecycle events via out-of-band control API, versioned session registry, dynamic gate thresholds (V2.2); retention features, AET-like global pressure, and the separate GPU-placement / CPU-retention / secondary-persistence control surfaces (V2.3, vLLM-only); multi-replica routing, EPP export, session migration (V2.4, post-proof scale-out to llm-d); residual correction, quantization tiers, aLoRA reuse (parked — see [[01 - Strategy and Re-sequencing]]). Worker-side/layerwise changes: none.
 
 ## 8. References
 

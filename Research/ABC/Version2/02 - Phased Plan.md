@@ -41,7 +41,7 @@ Shortest credible path to a demonstrable, deterministic prefetch heuristic with 
 }
 ```
 
-Figure 1 shows the four tracks. The demonstration milestone is V2.1 at ~week 4. V2.1 start is **gated** (see below); the gate items are design/spec work, not benchmarks, so they overlap V2.0.
+Figure 1 shows the four scheduled tracks — all single-engine vLLM work. The demonstration milestone is V2.1 at ~week 4. V2.1 start is **gated** (see below); the gate items are design/spec work, not benchmarks, so they overlap V2.0. V2.4 (llm-d scale-out) is intentionally absent from the timeline: it starts only after the single-engine proof exists.
 
 ## V2.0 — Characterization and calibration (week 0–1.5)
 
@@ -70,7 +70,7 @@ Figure 1 shows the four tracks. The demonstration milestone is V2.1 at ~week 4. 
 5. lead-time-aware utility function and measured constants defined (shadow mode until V2.0 calibration lands);
 6. stable considered/submitted/useful accounting instrumented;
 7. admission-only and true lifecycle-event claims separated;
-8. llm-d exact-residency/load baseline included where routing novelty is evaluated (for V2.3).
+8. single-engine scope confirmed — cluster/routing work is deferred to V2.4 (post-proof).
 
 **Method.** Full build guide in [[03 - Event-Driven Temperature Heuristic Implementation Guide]]. Summary: contiguous prefix bundles; async residency state machine; deadline gate (promote bundle B only when predicted lead time H exceeds calibrated prefetch latency); non-evicting speculative reservation; terminal-partition accounting. Validate on the pinned workload at concurrency 32 and 64: V2.1 vs. V1 N=100 vs. reactive baseline, ≥3 paired repetitions, node-swapped.
 
@@ -127,13 +127,14 @@ Owned by [[04 - Theoretical Validation]]; acceptance bounds declared in V2.0.
 - **H2** — Lead time is the primary benefit condition: ready-at-demand yield and critical-path savings grow when H exceeds calibrated bundle transfer time.
 - **H3** — Lifecycle events add useful horizon beyond admission alone.
 - **H4** — The utility/capacity gate protects the active workload (p95 TTFT and success within non-inferiority bounds across pressure levels).
-- **H5** — Predicted future reuse adds value beyond llm-d exact cache-aware routing in multi-replica deployment.
+- **H5** — *(V2.4, post-proof)* Predicted future reuse adds value beyond llm-d exact cache-aware routing in multi-replica deployment.
 
 ## Dependencies and critical path
 
 - V2.1 start depends on the eight gates (design/spec items overlapping V2.0), and its *performance claims* depend on V2.0 calibration (shadow mode until then).
-- V2.2 depends on V2.1's bundle machinery and on the out-of-band control API existing at all (harness/router work — check feasibility early).
-- V2.3's RFC depends on V2.1's design settling, not its results; the routing bench depends on V2.1 code.
+- V2.2 depends on V2.1's bundle machinery and on the out-of-band control API existing at all (harness work — check feasibility early).
+- V2.3's RFC depends on V2.1's design settling, not its results.
+- V2.4 (llm-d scale-out) depends on the V2.1/V2.2 single-engine proof; it is intentionally unscheduled.
 
 ## Risks
 
