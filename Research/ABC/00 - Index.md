@@ -13,6 +13,7 @@ status: "active"
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
 - [[Methodology/00 - Index|Methodology and Implementation]] — experiment definitions, plans, implementation guides, and design discussions.
 - [[Version2/00 - Index|Version 2 — Proactive Speculative Prefetching]] — deterministic, event- and queue-informed program. The first five-cell V2.1 run validates the control plane and safety behavior but found zero live submissions because no truly free CPU KV slots remained.
+- [[Version3/00 - Index|Version 3 — JIT Demand-Safe Speculative Prefetch]] — v6 single-owner, demand-priority implementation. Mechanism accepted in the first AgentX run; causal performance benefit remains inconclusive because the nodes diverged before speculative promotion.
 
 ## Methodology and implementation
 
@@ -68,6 +69,12 @@ This is not a live-prefetch performance proof. It is evidence that V2.1's contro
 
 The next implementation must reserve a bounded speculative block budget, split capacity reasons, and expose true allocated/free/evictable/speculative CPU block gauges. Do not restore unrestricted eviction.
 
+## Version 3 JIT demand-safe checkpoint — 2026-08-21
+
+[[Version3/00 - Index|Version3]] implements JIT activation, one earliest-deadline owner, demand-idle submission, demand-priority filesystem service, explicit demand/speculative allocation modes, physical reserve preservation, owner-bound cleanup, and a one-bundle retention lease. The first v6 treatment promoted 1,024 chunks: 512 useful, 448 wasted, and 64 pending at the measurement boundary. No reserve borrowing or lease reclamation occurred. Useful yield rose from 4.71% in the v5 failure to 50.0%, so the mechanism is accepted for continued research.
+
+The observed AgentX deltas are not causal evidence. Treatment warmup was already 59% shorter and mean TTFT 89% lower while speculative submitted/promoted counters were still zero. The pair also used different nodes, both profiling phases cancelled 51 requests at timeout, and DCGM telemetry was absent. The next experiment is a replicated node cross-over with complete draining and GPU/device-specific telemetry.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -92,15 +99,17 @@ The next implementation must reserve a bounded speculative block budget, split c
 - V2.1 live, zero submitted: [6ccc8c955f6149f488bc6c488f95d927](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/6ccc8c955f6149f488bc6c488f95d927?workspace=benchflow)
 - V2.1 reactive stock: [4111b847dba14ae0a8f6b6617aec939e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/4111b847dba14ae0a8f6b6617aec939e?workspace=benchflow)
 
+- Version3 v6 JIT control (performance baseline; pair confounded): [19c4d1be0d0b4bbeb6358da05c32721f](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/19c4d1be0d0b4bbeb6358da05c32721f?workspace=benchflow)
+- Version3 v6 JIT treatment (mechanism accepted; performance inconclusive): [5be11650e5a34043a3940c2e57dded74](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/5be11650e5a34043a3940c2e57dded74?workspace=benchflow)
+
 ## Next experiment
 
-Version2 is now the active experiment. Before another performance comparison:
+Version3 is now the active experiment. Keep the v6 mechanism fixed and establish causality before tuning:
 
-1. split capacity skip by hard-cap, pending-bundle, step-budget, speculative-budget, manager-free-slot, and recheck-redundant reasons;
-2. expose total allocated, truly free, evictable demand, speculative-ready, read-pending, and write-pending CPU blocks;
-3. reserve 64, 256, and 1,024 speculative blocks (about 128 MiB, 512 MiB, and 2 GiB in this run) without allowing speculative work to evict demand data;
-4. rerun stock, overlay, shadow, and live with at least three randomized, node-paired repetitions;
-5. reject any live mechanism cell with zero submitted promotions, missing-file loads, terminal-accounting drift, or speculative eviction of demand data;
-6. analyze TTFT and throughput only after submitted promotions complete successfully and at least some become useful.
-
-The V1 N sweep is no longer the primary next step. V1 should remain a short negative safety control, not a tuning candidate.
+1. swap control and treatment across the two H100 nodes in a randomized cross-over;
+2. collect at least three completed pairs;
+3. extend grace time or reduce pressure so all admitted requests finish;
+4. capture DCGM clocks/utilization/memory/PCIe and device-specific NVMe telemetry;
+5. retain `max_num_seqs=1` for the immediate mechanism test, then repeat at realistic scheduler concurrency;
+6. test a 64-block reserve against 512 only after a clean replicated baseline;
+7. reject a performance claim if warmup diverges before promotion, terminal accounting drifts, promotions are zero, or load failures occur.
