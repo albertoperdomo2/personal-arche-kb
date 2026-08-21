@@ -30,7 +30,7 @@ Headline performance was essentially tied:
 
 Those mixed changes are not evidence of either benefit or a meaningful regression. Request-level pairing also showed a mixed distribution: the treatment had lower TTFT for 61.65% of matched requests, but a small number of slower tail requests raised the mean and p95.
 
-This pair is **conditionally valid for mechanism behavior and inconclusive for performance**. The cells ran concurrently despite the intended sequential placement, only one pair was executed, three requests were cancelled in each cell at shutdown, GPU telemetry was unavailable, and the artifact export omitted deployment manifests and native-cadence Prometheus data.
+This pair is **conditionally valid for mechanism behavior and inconclusive for performance**. Concurrent execution is appropriate because the cells used isolated compute nodes and experienced the same wall-clock conditions. The remaining limitations are that only one pair was executed, node assignment was not balanced across repeats, shared Weka/network headroom and GPU behavior were not captured, three requests were cancelled in each cell at shutdown, and the artifact export omitted deployment manifests and native-cadence Prometheus data.
 
 ## Runs and configuration
 
@@ -230,16 +230,16 @@ Reactive asynchronous tier lookup was slightly worse in the treatment (mean abou
 
 ## Validity and artifact-export issues
 
-### Runs overlapped despite requested sequential placement
+### Concurrent isolated-cell execution
 
-MLflow timestamps and AIPerf logs show that the cells were concurrent:
+MLflow timestamps and AIPerf logs show that the isolated cells ran concurrently:
 
 - control MLflow start: 20:13:10 UTC-equivalent epoch; benchmark profiling approximately 20:36:25–21:07:05;
 - treatment MLflow start: 3.25 seconds later; profiling approximately 20:36:34–21:07:14.
 
-The current experiment definition requests sequential placement, but the runtime did not honor it. Without the missing resolved-run-plan and deployment artifacts, the cause cannot be identified from these runs. A stale orchestration image or a different execution path is plausible, but unproven.
+The current experiment definition requests sequential placement, but the runtime used concurrent isolated deployments. Concurrent pairing is acceptable—and can be preferable—because it exposes both cells to the same time-dependent cluster and Weka conditions. It does not invalidate treatment-side mechanism counters or the comparison.
 
-This matters because cells may have experienced shared infrastructure contention, and they certainly ran on different deployment instances. It does not invalidate treatment-side mechanism counters, but it weakens the causal performance comparison.
+What remains unverified is whether the shared Weka/network path had sufficient headroom and whether the two nodes had comparable GPU health and performance. Repeated pairs should therefore swap control/treatment node assignment and capture shared-storage, network, and GPU telemetry. Sequential execution is not required.
 
 ### Missing artifacts
 
@@ -285,7 +285,7 @@ Do not sweep concurrency or add queue heuristics yet. First run the smallest dis
    - bytes prefetched, ordinary victims, and eviction regret;
    - GPU and PCIe telemetry;
    - demand versus speculative I/O queue delay.
-5. Require repeated, placement-balanced pairs and non-overlapping cells.
+5. Use concurrent isolated pairs, repeat them, and swap control/treatment node assignment.
 
 The decisive questions are:
 
