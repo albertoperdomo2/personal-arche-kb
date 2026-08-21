@@ -46,40 +46,96 @@ These are **observed differences, not accepted causal effects**.
 | Average input | 65,599.5 tokens | 67,010.1 tokens | +2.2% |
 | Average output | 886.8 tokens | 721.1 tokens | -18.7% |
 
+Figure 1 compares like-for-like latency measures on a common seconds scale. Treatment is lower for every observed summary, but this is not a causal estimate because the same node divergence appears before prefetch runs.
+
 ```vega-lite
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "description": "Observed profiling throughput and TTFT; differences are not causal estimates.",
+  "title": "Figure 1 — Observed profiling latency",
+  "width": 700,
+  "height": 320,
   "data": {
     "values": [
-      {"metric": "Request throughput (req/s)", "cell": "Control", "value": 0.0315217},
-      {"metric": "Request throughput (req/s)", "cell": "Treatment", "value": 0.0820651},
-      {"metric": "Mean TTFT (s)", "cell": "Control", "value": 727.761},
-      {"metric": "Mean TTFT (s)", "cell": "Treatment", "value": 443.341},
-      {"metric": "p95 TTFT (s)", "cell": "Control", "value": 1506.826},
-      {"metric": "p95 TTFT (s)", "cell": "Treatment", "value": 751.417}
+      {"metric": "Mean TTFT", "cell": "Control", "seconds": 727.761},
+      {"metric": "Mean TTFT", "cell": "Treatment", "seconds": 443.341},
+      {"metric": "p95 TTFT", "cell": "Control", "seconds": 1506.826},
+      {"metric": "p95 TTFT", "cell": "Treatment", "seconds": 751.417},
+      {"metric": "Mean E2E", "cell": "Control", "seconds": 756.486},
+      {"metric": "Mean E2E", "cell": "Treatment", "seconds": 454.648},
+      {"metric": "p95 E2E", "cell": "Control", "seconds": 1521.730},
+      {"metric": "p95 E2E", "cell": "Treatment", "seconds": 756.778}
     ]
   },
-  "facet": {"field": "metric", "type": "nominal", "columns": 3, "title": null},
-  "spec": {
-    "mark": {"type": "bar", "tooltip": true},
-    "encoding": {
-      "x": {"field": "cell", "type": "nominal", "title": null, "sort": ["Control", "Treatment"]},
-      "y": {"field": "value", "type": "quantitative", "title": null, "scale": {"zero": true}},
-      "color": {
-        "field": "cell",
-        "type": "nominal",
-        "scale": {"domain": ["Control", "Treatment"], "range": ["#6b7280", "#2563eb"]},
-        "legend": null
-      },
-      "tooltip": [
-        {"field": "metric", "type": "nominal"},
-        {"field": "cell", "type": "nominal"},
-        {"field": "value", "type": "quantitative"}
-      ]
-    }
+  "mark": {"type": "bar", "tooltip": true},
+  "encoding": {
+    "x": {"field": "metric", "type": "nominal", "title": "Latency statistic", "sort": ["Mean TTFT", "p95 TTFT", "Mean E2E", "p95 E2E"]},
+    "xOffset": {"field": "cell", "type": "nominal"},
+    "y": {"field": "seconds", "type": "quantitative", "title": "Latency (s)", "scale": {"zero": true}},
+    "color": {"field": "cell", "type": "nominal", "title": "Configuration", "scale": {"scheme": "category10"}},
+    "tooltip": [
+      {"field": "metric", "type": "nominal", "title": "Metric"},
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "seconds", "type": "quantitative", "title": "Latency (s)", "format": ".3f"}
+    ]
+  }
+}
+```
+
+Figure 2 isolates request throughput so incompatible units are not mixed on one axis. The observed treatment throughput is 2.60 times control, but the pair is confounded.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 2 — Observed profiling request throughput",
+  "width": 500,
+  "height": 300,
+  "data": {
+    "values": [
+      {"cell": "Control", "requests_per_second": 0.0315217},
+      {"cell": "Treatment", "requests_per_second": 0.0820651}
+    ]
   },
-  "resolve": {"scale": {"y": "independent"}}
+  "mark": {"type": "bar", "tooltip": true},
+  "encoding": {
+    "x": {"field": "cell", "type": "nominal", "title": "Configuration", "sort": ["Control", "Treatment"]},
+    "y": {"field": "requests_per_second", "type": "quantitative", "title": "Request throughput (requests/s)", "scale": {"zero": true}},
+    "color": {"field": "cell", "type": "nominal", "title": "Configuration", "scale": {"scheme": "category10"}},
+    "tooltip": [
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "requests_per_second", "type": "quantitative", "title": "Requests/s", "format": ".5f"}
+    ]
+  }
+}
+```
+
+Figure 3 makes the timeout problem visible. Both cells cancelled 51 requests, so the benchmark did not produce two cleanly drained samples even though the model server reported zero request errors.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 3 — Profiling request outcomes",
+  "width": 560,
+  "height": 300,
+  "data": {
+    "values": [
+      {"cell": "Control", "outcome": "Completed", "requests": 58},
+      {"cell": "Control", "outcome": "Cancelled at timeout", "requests": 51},
+      {"cell": "Treatment", "outcome": "Completed", "requests": 151},
+      {"cell": "Treatment", "outcome": "Cancelled at timeout", "requests": 51}
+    ]
+  },
+  "mark": {"type": "bar", "tooltip": true},
+  "encoding": {
+    "x": {"field": "cell", "type": "nominal", "title": "Configuration", "sort": ["Control", "Treatment"]},
+    "xOffset": {"field": "outcome", "type": "nominal"},
+    "y": {"field": "requests", "type": "quantitative", "title": "Requests (count)", "scale": {"zero": true}},
+    "color": {"field": "outcome", "type": "nominal", "title": "Outcome", "scale": {"scheme": "category10"}},
+    "tooltip": [
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "outcome", "type": "nominal", "title": "Outcome"},
+      {"field": "requests", "type": "quantitative", "title": "Requests"}
+    ]
+  }
 }
 ```
 
@@ -99,14 +155,18 @@ Warmup is a matched-work diagnostic: both cells processed 66 requests and emitte
 | GPU→CPU store bytes | 595.526 GB | 595.524 GB | effectively equal |
 | Mean async lookup delay | 180.879 s | 0.857 s | -99.5% |
 
+Figure 4 shows the matched-work warmup divergence. It occurs while treatment has zero speculative submissions or promotions, so it rules out speculative movement as the sole cause of the later performance difference.
+
 ```vega-lite
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "description": "Matched-work warmup divergence before speculative promotion.",
+  "title": "Figure 4 — Matched-work warmup duration and latency",
+  "width": 650,
+  "height": 320,
   "data": {
     "values": [
-      {"metric": "Duration", "cell": "Control", "seconds": 2021.786},
-      {"metric": "Duration", "cell": "Treatment", "seconds": 831.331},
+      {"metric": "Phase duration", "cell": "Control", "seconds": 2021.786},
+      {"metric": "Phase duration", "cell": "Treatment", "seconds": 831.331},
       {"metric": "Mean TTFT", "cell": "Control", "seconds": 264.589},
       {"metric": "Mean TTFT", "cell": "Treatment", "seconds": 29.516},
       {"metric": "p95 TTFT", "cell": "Control", "seconds": 828.563},
@@ -115,19 +175,14 @@ Warmup is a matched-work diagnostic: both cells processed 66 requests and emitte
   },
   "mark": {"type": "bar", "tooltip": true},
   "encoding": {
-    "x": {"field": "metric", "type": "nominal", "title": null, "sort": ["Duration", "Mean TTFT", "p95 TTFT"]},
-    "xOffset": {"field": "cell"},
-    "y": {"field": "seconds", "type": "quantitative", "title": "Seconds", "scale": {"zero": true}},
-    "color": {
-      "field": "cell",
-      "type": "nominal",
-      "scale": {"domain": ["Control", "Treatment"], "range": ["#6b7280", "#2563eb"]},
-      "title": null
-    },
+    "x": {"field": "metric", "type": "nominal", "title": "Warmup statistic", "sort": ["Phase duration", "Mean TTFT", "p95 TTFT"]},
+    "xOffset": {"field": "cell", "type": "nominal"},
+    "y": {"field": "seconds", "type": "quantitative", "title": "Duration or latency (s)", "scale": {"zero": true}},
+    "color": {"field": "cell", "type": "nominal", "title": "Configuration", "scale": {"scheme": "category10"}},
     "tooltip": [
-      {"field": "metric", "type": "nominal"},
-      {"field": "cell", "type": "nominal"},
-      {"field": "seconds", "type": "quantitative", "format": ".3f"}
+      {"field": "metric", "type": "nominal", "title": "Metric"},
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "seconds", "type": "quantitative", "title": "Seconds", "format": ".3f"}
     ]
   }
 }
@@ -136,6 +191,72 @@ Warmup is a matched-work diagnostic: both cells processed 66 requests and emitte
 Treatment warmup recorded **zero submitted, promoted, useful, or wasted speculative chunks**. Its policy outcomes were 22 absent bundles, 41 late bundles, 2,560 gate-rejected keys, and 1,087 primary-redundant keys. Because the large latency and duration difference predates the tested speculative data movement, speculative prefetch alone cannot explain the profiling difference.
 
 The 211-fold async-lookup-delay difference is an unresolved systems confound. Missing DCGM GPU utilization, clocks, memory, and PCIe series prevent testing whether node runtime state or GPU behavior caused it. Concurrent execution avoids time drift but does not remove node effects.
+
+## Performance diagnostics
+
+Figure 5 compares the queue and tiering delays that most directly determine TTFT in this saturated, one-sequence test. Treatment shows lower queue percentiles and lower mean async lookup latency, but warmup proves that at least part of this difference is node- or runtime-dependent rather than a demonstrated prefetch effect.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 5 — Profiling queue and tiering delay",
+  "width": 650,
+  "height": 320,
+  "data": {
+    "values": [
+      {"metric": "Queue p50", "cell": "Control", "seconds": 449.2},
+      {"metric": "Queue p50", "cell": "Treatment", "seconds": 277.3},
+      {"metric": "Queue p99", "cell": "Control", "seconds": 711.9},
+      {"metric": "Queue p99", "cell": "Treatment", "seconds": 491.9},
+      {"metric": "Async lookup mean", "cell": "Control", "seconds": 422.178},
+      {"metric": "Async lookup mean", "cell": "Treatment", "seconds": 214.976}
+    ]
+  },
+  "mark": {"type": "bar", "tooltip": true},
+  "encoding": {
+    "x": {"field": "metric", "type": "nominal", "title": "Delay statistic", "sort": ["Queue p50", "Queue p99", "Async lookup mean"]},
+    "xOffset": {"field": "cell", "type": "nominal"},
+    "y": {"field": "seconds", "type": "quantitative", "title": "Delay (s)", "scale": {"zero": true}},
+    "color": {"field": "cell", "type": "nominal", "title": "Configuration", "scale": {"scheme": "category10"}},
+    "tooltip": [
+      {"field": "metric", "type": "nominal", "title": "Metric"},
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "seconds", "type": "quantitative", "title": "Delay (s)", "format": ".3f"}
+    ]
+  }
+}
+```
+
+Figure 6 shows the external-KV reuse indicators. Treatment sourced a larger share of prompt tokens externally and had a higher external prefix hit rate. This is consistent with more external reuse but is not sufficient to attribute the latency difference to speculative prefetch.
+
+```vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Figure 6 — External KV reuse indicators",
+  "width": 560,
+  "height": 300,
+  "data": {
+    "values": [
+      {"metric": "External prompt-token share", "cell": "Control", "percent": 24.3},
+      {"metric": "External prompt-token share", "cell": "Treatment", "percent": 40.6},
+      {"metric": "External prefix hit rate", "cell": "Control", "percent": 33.1},
+      {"metric": "External prefix hit rate", "cell": "Treatment", "percent": 51.8}
+    ]
+  },
+  "mark": {"type": "bar", "tooltip": true},
+  "encoding": {
+    "x": {"field": "metric", "type": "nominal", "title": "Reuse metric", "sort": ["External prompt-token share", "External prefix hit rate"]},
+    "xOffset": {"field": "cell", "type": "nominal"},
+    "y": {"field": "percent", "type": "quantitative", "title": "Share or hit rate (%)", "scale": {"zero": true, "domain": [0, 100]}},
+    "color": {"field": "cell", "type": "nominal", "title": "Configuration", "scale": {"scheme": "category10"}},
+    "tooltip": [
+      {"field": "metric", "type": "nominal", "title": "Metric"},
+      {"field": "cell", "type": "nominal", "title": "Configuration"},
+      {"field": "percent", "type": "quantitative", "title": "Percent", "format": ".1f"}
+    ]
+  }
+}
+```
 
 ## Mechanism result
 
@@ -154,39 +275,36 @@ Treatment profiling produced an exact terminal accounting snapshot:
 | Pending at measurement end | 64 | 6.25% of promoted |
 | Evicted before demand | 384 | 37.5% of promoted; subset of wasted |
 
-The promoted partition balances: (512 + 448 + 64 = 1{,}024). There were no load failures, allocation refusals, skipped chunks, reserve borrowing, or lease reclamation. All promoted bundles were 64 chunks. Bundle state ended at 16 ready, 10 late, and 10 absent. Mean active-owner gauge was approximately 0.986.
+The promoted partition balances: $512 + 448 + 64 = 1{,}024$. There were no load failures, allocation refusals, skipped chunks, reserve borrowing, or lease reclamation. All promoted bundles were 64 chunks. Bundle state ended at 16 ready, 10 late, and 10 absent. Mean active-owner gauge was approximately 0.986.
+
+Figure 7 compares terminal promotion quality with the failed v5 lease run. The useful share rises from 4.71% to 50.0%, while waste falls from 93.29% to 43.75%.
 
 ```vega-lite
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "description": "Promoted-chunk terminal outcomes in failed v5 and JIT v6.",
+  "title": "Figure 7 — Promoted-chunk outcomes in v5 and v6",
+  "width": 650,
+  "height": 240,
   "data": {
     "values": [
-      {"version": "v5 failed lease run", "outcome": "Useful", "percent": 4.71},
-      {"version": "v5 failed lease run", "outcome": "Wasted", "percent": 93.29},
-      {"version": "v5 failed lease run", "outcome": "Other/pending", "percent": 2.00},
-      {"version": "v6 JIT run", "outcome": "Useful", "percent": 50.00},
-      {"version": "v6 JIT run", "outcome": "Wasted", "percent": 43.75},
-      {"version": "v6 JIT run", "outcome": "Other/pending", "percent": 6.25}
+      {"version": "v5 failed lease run", "outcome": "Useful", "percent": 4.71, "order": 1},
+      {"version": "v5 failed lease run", "outcome": "Wasted", "percent": 93.29, "order": 2},
+      {"version": "v5 failed lease run", "outcome": "Other or pending", "percent": 2.00, "order": 3},
+      {"version": "v6 JIT run", "outcome": "Useful", "percent": 50.00, "order": 1},
+      {"version": "v6 JIT run", "outcome": "Wasted", "percent": 43.75, "order": 2},
+      {"version": "v6 JIT run", "outcome": "Other or pending", "percent": 6.25, "order": 3}
     ]
   },
   "mark": {"type": "bar", "tooltip": true},
   "encoding": {
-    "y": {"field": "version", "type": "nominal", "title": null, "sort": ["v5 failed lease run", "v6 JIT run"]},
-    "x": {"field": "percent", "type": "quantitative", "title": "Percent of promoted chunks", "stack": "zero", "scale": {"domain": [0, 100]}},
-    "color": {
-      "field": "outcome",
-      "type": "nominal",
-      "scale": {
-        "domain": ["Useful", "Wasted", "Other/pending"],
-        "range": ["#16a34a", "#dc2626", "#9ca3af"]
-      },
-      "title": null
-    },
+    "y": {"field": "version", "type": "nominal", "title": "Implementation", "sort": ["v5 failed lease run", "v6 JIT run"]},
+    "x": {"field": "percent", "type": "quantitative", "title": "Share of promoted chunks (%)", "stack": "zero", "scale": {"zero": true, "domain": [0, 100]}},
+    "color": {"field": "outcome", "type": "nominal", "title": "Terminal outcome", "scale": {"scheme": "category10"}},
+    "order": {"field": "order", "type": "ordinal"},
     "tooltip": [
-      {"field": "version", "type": "nominal"},
-      {"field": "outcome", "type": "nominal"},
-      {"field": "percent", "type": "quantitative", "format": ".2f"}
+      {"field": "version", "type": "nominal", "title": "Implementation"},
+      {"field": "outcome", "type": "nominal", "title": "Outcome"},
+      {"field": "percent", "type": "quantitative", "title": "Promoted chunks (%)", "format": ".2f"}
     ]
   }
 }
