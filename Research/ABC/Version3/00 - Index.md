@@ -15,6 +15,7 @@ Version 3 changes the V2.1 live path from broad admission-time promotion into a 
 
 ## Documents
 
+- [[01 - Current JIT Demand-Safe Speculative Prefetch Mechanism|01 — Current JIT Demand-Safe Speculative Prefetch Mechanism]] — **current theory and implementation reference:** complete design rationale, policy lifecycle, state machine, allocator contracts, I/O priority, ownership, retention, configuration, telemetry, code map, guarantees, and limitations.
 - [[2026-08-21 - V3 JIT demand-safe AgentX comparison|2026-08-21 — V3 JIT demand-safe AgentX comparison]] — first v6 control/treatment comparison, mechanism accounting, validity analysis, and next experiment.
 - [[../Version2/Reports/2026-08-20 - V2.1 retention-lease Weka failure|V2.1 retention-lease Weka failure]] — the v5 failure that motivated this direction.
 - [[../00 - Index|ABC project index]] — project history and run registry.
