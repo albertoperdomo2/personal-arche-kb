@@ -331,22 +331,24 @@ If released without demand, blocks lose their lease but remain speculative and r
 
 ## 5. Bundle state machine
 
-| State | Meaning | Typical next states |
-|---|---|---|
-| `QUEUED` | JIT candidate exists; no secondary lookup has started | `PENDING_LOOKUP`, `GATE_REJECTED`, `LATE`, `CANCELLED` |
-| `PENDING_LOOKUP` | Low-priority secondary residency is unresolved | `RESIDENT`, `ABSENT`, `LATE`, `CANCELLED` |
-| `RESIDENT` | A non-empty contiguous secondary-resident run is known | `SUBMITTING`, `SUBMITTED`, `REDUNDANT`, `CAPACITY_SKIPPED`, `GATE_REJECTED` |
-| `SUBMITTING` | Some run keys have been dispositioned; more remain | `SUBMITTED`, `READY`, `LATE`, `FAILED`, `CAPACITY_SKIPPED` |
-| `SUBMITTED` | Promotions are in flight | `READY`, `LATE`, `FAILED`, `CANCELLED`, `SUBMITTING` |
-| `READY` | Promotion completed before demand | ownership retained until demand/cleanup |
-| `LATE` | Demand deadline or demand arrival beat completion | terminal |
-| `ABSENT` | No usable contiguous secondary-resident run | terminal |
-| `FAILED` | Promotion job failed | terminal |
-| `GATE_REJECTED` | Remaining horizon did not exceed predicted transfer cost | terminal |
-| `CAPACITY_SKIPPED` | Speculative CPU allocation refused | terminal |
-| `REDUNDANT` | Recheck found all relevant keys already in CPU/loading | terminal |
-| `SHADOW_SUBMITTED` | Shadow policy would have submitted the run | terminal |
-| `CANCELLED` | Finish, preemption, reset, or abandonment closed the bundle | terminal |
+
+| State              | Meaning                                                     | Typical next states                                                         |
+| ------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `QUEUED`           | JIT candidate exists; no secondary lookup has started       | `PENDING_LOOKUP`, `GATE_REJECTED`, `LATE`, `CANCELLED`                      |
+| `PENDING_LOOKUP`   | Low-priority secondary residency is unresolved              | `RESIDENT`, `ABSENT`, `LATE`, `CANCELLED`                                   |
+| `RESIDENT`         | A non-empty contiguous secondary-resident run is known      | `SUBMITTING`, `SUBMITTED`, `REDUNDANT`, `CAPACITY_SKIPPED`, `GATE_REJECTED` |
+| `SUBMITTING`       | Some run keys have been dispositioned; more remain          | `SUBMITTED`, `READY`, `LATE`, `FAILED`, `CAPACITY_SKIPPED`                  |
+| `SUBMITTED`        | Promotions are in flight                                    | `READY`, `LATE`, `FAILED`, `CANCELLED`, `SUBMITTING`                        |
+| `READY`            | Promotion completed before demand                           | ownership retained until demand/cleanup                                     |
+| `LATE`             | Demand deadline or demand arrival beat completion           | terminal                                                                    |
+| `ABSENT`           | No usable contiguous secondary-resident run                 | terminal                                                                    |
+| `FAILED`           | Promotion job failed                                        | terminal                                                                    |
+| `GATE_REJECTED`    | Remaining horizon did not exceed predicted transfer cost    | terminal                                                                    |
+| `CAPACITY_SKIPPED` | Speculative CPU allocation refused                          | terminal                                                                    |
+| `REDUNDANT`        | Recheck found all relevant keys already in CPU/loading      | terminal                                                                    |
+| `SHADOW_SUBMITTED` | Shadow policy would have submitted the run                  | terminal                                                                    |
+| `CANCELLED`        | Finish, preemption, reset, or abandonment closed the bundle | terminal                                                                    |
+
 
 State-transition counters are separate from per-key terminal accounting, so asynchronous retries and multiple slices do not double-count considered keys.
 
@@ -354,12 +356,14 @@ State-transition counters are separate from per-key terminal accounting, so asyn
 
 The CPU tier now exposes four explicit allocation modes.
 
-| Mode | Caller | May use free non-reserved capacity | May reclaim speculative blocks | May evict ordinary demand data | May borrow unused reserve |
-|---|---|---:|---:|---:|---:|
-| `DEMAND_CACHE` | ordinary GPU→CPU cache persistence | yes | yes, but respects active lease | yes | no |
-| `DEMAND_CRITICAL` | reactive secondary→CPU load for a running request | yes | yes; may break lease as last resort | yes | yes, as last resort |
-| `SPECULATIVE_ONLY` | proactive prefetch | only within unused reserve | yes, but only speculative victims and respecting lease | no | no |
-| `NONE` | strictly free-only caller | yes | no | no | no |
+
+| Mode               | Caller                                            | May use free non-reserved capacity | May reclaim speculative blocks                         | May evict ordinary demand data | May borrow unused reserve |
+| ------------------ | ------------------------------------------------- | ---------------------------------- | ------------------------------------------------------ | ------------------------------ | ------------------------- |
+| `DEMAND_CACHE`     | ordinary GPU→CPU cache persistence                | yes                                | yes, but respects active lease                         | yes                            | no                        |
+| `DEMAND_CRITICAL`  | reactive secondary→CPU load for a running request | yes                                | yes; may break lease as last resort                    | yes                            | yes, as last resort       |
+| `SPECULATIVE_ONLY` | proactive prefetch                                | only within unused reserve         | yes, but only speculative victims and respecting lease | no                             | no                        |
+| `NONE`             | strictly free-only caller                         | yes                                | no                                                     | no                             | no                        |
+
 
 ### 6.1 Physical reserve
 
@@ -558,43 +562,47 @@ The v6 AgentX treatment used:
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `enabled` | Instantiate the policy. |
-| `policy` | Policy factory name; defaults to `admission`. |
-| `policy_module_path` | Optional out-of-tree policy module. |
-| `shadow_mode` | Make and account decisions without moving data. Defaults true. |
-| `jit_activation` | Record at admission but delay lookup/promotion until exclusive JIT activation. |
-| `demand_idle_only` | Defer activation/submission while demand lookup/load work exists. |
-| `tier_idx` | Secondary tier used for residency and promotion. |
-| `max_pending_bundles` | Bound on live policy bundles. |
-| `max_promotions_per_step` | Global live/shadow submission budget per scheduler step. |
-| `max_bundle_chunks` | Per-request candidate/probe/promotion ceiling. |
-| `max_candidate_chunks` | Admission frontier-scan window. |
-| `speculative_reserve_blocks` | Physical CPU blocks reserved for speculative allocation. `None` auto-derives; `0` disables speculative allocation. |
-| `retention_lease_bundles` | Ready bundles protected until demand. `None` defaults to one; `0` disables retention. |
-| `initial_admission_interval_ms` | Seed for queue service-time EWMA. |
-| `admission_interval_ewma_alpha` | EWMA adaptation rate. |
-| `transfer_base_ms` | Seed fixed transfer cost. |
-| `transfer_per_chunk_ms` | Seed marginal transfer cost. |
+
+| Field                           | Meaning                                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `enabled`                       | Instantiate the policy.                                                                                            |
+| `policy`                        | Policy factory name; defaults to `admission`.                                                                      |
+| `policy_module_path`            | Optional out-of-tree policy module.                                                                                |
+| `shadow_mode`                   | Make and account decisions without moving data. Defaults true.                                                     |
+| `jit_activation`                | Record at admission but delay lookup/promotion until exclusive JIT activation.                                     |
+| `demand_idle_only`              | Defer activation/submission while demand lookup/load work exists.                                                  |
+| `tier_idx`                      | Secondary tier used for residency and promotion.                                                                   |
+| `max_pending_bundles`           | Bound on live policy bundles.                                                                                      |
+| `max_promotions_per_step`       | Global live/shadow submission budget per scheduler step.                                                           |
+| `max_bundle_chunks`             | Per-request candidate/probe/promotion ceiling.                                                                     |
+| `max_candidate_chunks`          | Admission frontier-scan window.                                                                                    |
+| `speculative_reserve_blocks`    | Physical CPU blocks reserved for speculative allocation. `None` auto-derives; `0` disables speculative allocation. |
+| `retention_lease_bundles`       | Ready bundles protected until demand. `None` defaults to one; `0` disables retention.                              |
+| `initial_admission_interval_ms` | Seed for queue service-time EWMA.                                                                                  |
+| `admission_interval_ewma_alpha` | EWMA adaptation rate.                                                                                              |
+| `transfer_base_ms`              | Seed fixed transfer cost.                                                                                          |
+| `transfer_per_chunk_ms`         | Seed marginal transfer cost.                                                                                       |
+
 
 Unknown keys and invalid types are rejected. `chunk_bytes` is derived internally and cannot be supplied by the user.
 
 ## 14. Source-code map
 
-| Path | Responsibility |
-|---|---|
-| `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | Per-request opt-in, eligibility checks, ordered key construction, admission hook. |
-| `vllm/v1/kv_offload/tiering/prefetch/config.py` | Strict policy configuration and defaults. |
-| `vllm/v1/kv_offload/tiering/prefetch/base.py` | Policy/host interfaces and admission metrics. |
-| `vllm/v1/kv_offload/tiering/prefetch/estimators.py` | Queue lead-time EWMA and measured transfer-cost regression. |
-| `vllm/v1/kv_offload/tiering/prefetch/admission.py` | Bundle state machine, JIT owner, residency resolution, deadline gate, slicing, cancellation, exact accounting. |
-| `vllm/v1/kv_offload/tiering/manager.py` | Policy lifecycle hooks, promotion batching/completion, owner release, speculative mark and lease wiring. |
-| `vllm/v1/kv_offload/cpu/manager.py` | Allocation modes, physical reserve, speculative provenance, owner enforcement, reclamation, retention lease, CPU metrics. |
-| `vllm/v1/kv_offload/tiering/async_lookup.py` | Demand/prefetch lookup priorities, pending-state upgrade, background batch execution. |
-| `vllm/v1/kv_offload/tiering/fs/thread_pool.py` | Demand-load, prefetch-load, and store queues. |
-| `vllm/v1/kv_offload/tiering/fs/manager.py` | Low-priority prefetch lookup, demand-idle signal, and prefetch load classification. |
-| `vllm/v1/kv_offload/tiering/spec.py` | Configuration parsing, mutual exclusion, and metric registration. |
+
+| Path                                                                   | Responsibility                                                                                                            |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | Per-request opt-in, eligibility checks, ordered key construction, admission hook.                                         |
+| `vllm/v1/kv_offload/tiering/prefetch/config.py`                        | Strict policy configuration and defaults.                                                                                 |
+| `vllm/v1/kv_offload/tiering/prefetch/base.py`                          | Policy/host interfaces and admission metrics.                                                                             |
+| `vllm/v1/kv_offload/tiering/prefetch/estimators.py`                    | Queue lead-time EWMA and measured transfer-cost regression.                                                               |
+| `vllm/v1/kv_offload/tiering/prefetch/admission.py`                     | Bundle state machine, JIT owner, residency resolution, deadline gate, slicing, cancellation, exact accounting.            |
+| `vllm/v1/kv_offload/tiering/manager.py`                                | Policy lifecycle hooks, promotion batching/completion, owner release, speculative mark and lease wiring.                  |
+| `vllm/v1/kv_offload/cpu/manager.py`                                    | Allocation modes, physical reserve, speculative provenance, owner enforcement, reclamation, retention lease, CPU metrics. |
+| `vllm/v1/kv_offload/tiering/async_lookup.py`                           | Demand/prefetch lookup priorities, pending-state upgrade, background batch execution.                                     |
+| `vllm/v1/kv_offload/tiering/fs/thread_pool.py`                         | Demand-load, prefetch-load, and store queues.                                                                             |
+| `vllm/v1/kv_offload/tiering/fs/manager.py`                             | Low-priority prefetch lookup, demand-idle signal, and prefetch load classification.                                       |
+| `vllm/v1/kv_offload/tiering/spec.py`                                   | Configuration parsing, mutual exclusion, and metric registration.                                                         |
+
 
 ## 15. Tests and implementation provenance
 
@@ -700,3 +708,4 @@ The design is deliberately conservative: speculate late, for one request, over a
 - [[../Version2/04 - Theoretical Validation|Version2 theoretical validation]]
 - [[../Version2/06 - 2026-08-19 - V2.1 Implementation Deep Dive|Original V2.1 implementation deep dive]]
 - [[../Version2/Reports/2026-08-20 - V2.1 retention-lease Weka failure|v5 retention-lease failure that motivated JIT ownership]]
+
