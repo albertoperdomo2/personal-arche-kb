@@ -4,73 +4,53 @@ date: "2026-08-21"
 type: "research-index"
 experiment: "Activity-Based KV Cache Tier Placement"
 team: "PSAP"
-status: "mechanism-accepted-performance-unproven"
+status: "v3.1-implemented-awaiting-continuous-batching-run"
 ---
 
 # ABC Version 3
 
-Version 3 changes the V2.1 live path from broad admission-time promotion into a bounded **just-in-time, demand-safe speculative prefetcher**. It keeps the evidence-backed V2 proposition—residency-verified contiguous session-prefix promotion when queue lead time can hide transfer latency—but narrows ownership and lifetime so speculative KV cannot dominate CPU capacity or filesystem service.
+Version 3 changed the failed V2.1 broad admission-time promotion path into a bounded **just-in-time, demand-safe speculative prefetcher**. Version 3.1 now removes the `max_num_seqs=1` assumption and implements a continuous-batching-safe first experiment.
 
-**Current verdict:** the v6 implementation mechanism is accepted. In its first AgentX comparison, 50.0% of promoted chunks became useful versus 4.71% in the failed v5 retention-lease run, and no lease reclamation or reserve borrowing occurred. Performance benefit is not yet established because the two nodes diverged during warmup before treatment submitted any speculative promotion.
+**Current verdict:** continue this direction. The v6 mechanism established that single-owner JIT promotion could make 50.0% of promoted chunks useful in its first AgentX comparison, versus 4.71% in the failed v5 retention-lease run, but that comparison did not establish a causal performance benefit. The v7 implementation is complete locally and ready to build; no v7 runtime result exists yet.
 
-## Documents
+## Current documents
 
-- [[01 - Current JIT Demand-Safe Speculative Prefetch Mechanism|01 — Current JIT Demand-Safe Speculative Prefetch Mechanism]] — **current theory and implementation reference:** complete design rationale, policy lifecycle, state machine, allocator contracts, I/O priority, ownership, retention, configuration, telemetry, code map, guarantees, and limitations.
-- [[2026-08-21 - V3 JIT demand-safe AgentX comparison|2026-08-21 — V3 JIT demand-safe AgentX comparison]] — first v6 control/treatment comparison, mechanism accounting, validity analysis, and next experiment.
-- [[../Version2/Reports/2026-08-20 - V2.1 retention-lease Weka failure|V2.1 retention-lease Weka failure]] — the v5 failure that motivated this direction.
+- [[02 - Continuous-Batching Remediation and v7 Implementation|02 — Continuous-Batching Remediation and v7 Implementation]] — **current Version 3.1 code and test reference:** batch-round lead-time model, fail-closed calibration, bounded eight-chunk I/O, demand-capacity sharing, immediate capacity-failure release, simplified configuration, verification evidence, and v7 experiment plan.
+- [[01 - Current JIT Demand-Safe Speculative Prefetch Mechanism|01 — Current JIT Demand-Safe Speculative Prefetch Mechanism]] — detailed v6/single-sequence design reference. Its `demand_idle_only` configuration and serialized queue formula are historical and are superseded by Version 3.1 document 02.
+- [[2026-08-21 - V3 JIT demand-safe AgentX comparison|2026-08-21 — V3 JIT demand-safe AgentX comparison]] — first v6 control/treatment comparison, mechanism accounting, validity analysis, and motivation for the continuous-batching remediation.
+- [[../Version2/Reports/2026-08-20 - V2.1 retention-lease Weka failure|V2.1 retention-lease Weka failure]] — the v5 failure that motivated the Version 3 direction.
 - [[../00 - Index|ABC project index]] — project history and run registry.
 
-## Implementation record
+## Version 3.1 implementation status
 
 ### Provenance
 
 - Repository: `/Users/aperdomo/workspace/redhat/vllm`
 - Branch: `experimental/v2-admission-prefetch`
-- Commit: `c379bfdd5d` (`fix: Change of direction`)
-- Change size: 1,099 insertions and 114 deletions across 15 implementation/test files.
-- Verification before image build: 294 tests passed, 7 skipped; Ruff and diff checks passed.
-- Runtime image: `quay.io/rh-ee-aperdomo/vllm:v0.27.0-prefetch-v6`
-- Immutable tested digest: `sha256:2d746cfe91ea5c47ffc635f2995d5696c066e94c0dc33185db16ccee8ad19033`
+- Baseline HEAD: `c379bfdd5d717a3b3084097cefc77bb3a587bcb8`
+- State: implementation exists as uncommitted working-tree changes
+- Planned runtime image: `quay.io/rh-ee-aperdomo/vllm:v0.27.0-prefetch-v7`
+- Image status: not built or pushed in this checkpoint
 
-### What changed
+### Accepted Version 3.1 mechanism
 
-1. **JIT activation and one active owner.** Admission still creates residency/deadline-aware bundles, but live promotion is activated only near demand. At most one request owns speculative residency. Eligible bundles are ordered earliest-deadline-first.
-2. **Demand-idle submission.** With `demand_idle_only=true`, activation and submission yield whenever reactive demand work is present.
-3. **Demand-priority filesystem service.** Async lookup, filesystem manager, and thread-pool scheduling distinguish demand from speculative work so demand lookup and loading are not queued behind prefetch.
-4. **Explicit allocation contracts.** CPU allocation now distinguishes `DEMAND_CACHE`, `DEMAND_CRITICAL`, `SPECULATIVE_ONLY`, and `NONE`. Ordinary GPU→CPU persistence preserves the configured reserve; reactive demand may borrow it as a last resort; speculative allocation can reclaim only speculative victims.
-5. **Owner-bound lifetime.** Speculative blocks are tied to the active owner. Ownership transition cleans up stale speculative state rather than allowing many admitted requests to accumulate promoted prefixes.
-6. **Bounded retention lease.** `retention_lease_bundles=1` temporarily protects one completed promoted bundle from speculative replacement. Demand-critical allocation may break the lease, with separate accounting.
-7. **Terminal accounting and telemetry.** The policy records considered, trimmed, redundant, gate-rejected, submitted, useful, wasted, evicted-before-demand, bundle states, active ownership, reserve/free/speculative/leased blocks, reserve borrowing, and lease reclamation.
+1. **Batch-round lead time.** Queue depth is converted to admission rounds using `max_num_seqs`, observed scheduler occupancy, and EWMA admission batch size. The time horizon is admission rounds multiplied by EWMA time between admission rounds.
+2. **Fail-closed calibration.** For `max_num_seqs > 1`, the old serialized timing seed cannot authorize speculative work. A real continuous-batching interval must be observed first.
+3. **JIT single ownership.** At most one request owns speculative capacity, selected earliest-deadline-first.
+4. **Bounded physical I/O.** One speculative filesystem call carries at most eight chunks, and only one slice may be outstanding.
+5. **Demand-capacity sharing.** Demand remains queue-priority. Metadata lookup no longer creates a global idle-only veto, while the read pool reserves one worker for newly arriving demand when possible.
+6. **Immediate failure release.** Capacity refusal releases ownership immediately. Failed or demanded-while-pending slices abort the unsubmitted remainder.
+7. **Exact contiguous prefix.** Hole-tolerant downstream reuse is rejected because vLLM's prefix-chained hashes make later KV invalid after a changed block.
+8. **One public mode.** `shadow_mode`, `jit_activation`, and `demand_idle_only` are removed. `prefetch.enabled=true` selects the one supported Version 3.1 behavior.
 
-### Files changed
-
-Production paths:
-
-- `vllm/v1/kv_offload/cpu/manager.py`
-- `vllm/v1/kv_offload/tiering/async_lookup.py`
-- `vllm/v1/kv_offload/tiering/base.py`
-- `vllm/v1/kv_offload/tiering/fs/manager.py`
-- `vllm/v1/kv_offload/tiering/fs/thread_pool.py`
-- `vllm/v1/kv_offload/tiering/manager.py`
-- `vllm/v1/kv_offload/tiering/prefetch/admission.py`
-- `vllm/v1/kv_offload/tiering/prefetch/base.py`
-- `vllm/v1/kv_offload/tiering/prefetch/config.py`
-
-Focused tests cover CPU allocation/reserve/lease behavior, policy ownership and deadline ordering, manager integration, demand-priority async lookup, filesystem scheduling, and end-to-end configuration wiring.
-
-## Tested configuration
-
-The treatment used:
+## Planned v7 treatment configuration
 
 ```json
 {
   "enabled": true,
-  "shadow_mode": false,
-  "jit_activation": true,
-  "demand_idle_only": true,
   "tier_idx": 0,
   "max_pending_bundles": 256,
-  "max_promotions_per_step": 64,
+  "max_promotions_per_step": 8,
   "max_bundle_chunks": 64,
   "max_candidate_chunks": 1024,
   "speculative_reserve_blocks": 512,
@@ -78,23 +58,45 @@ The treatment used:
 }
 ```
 
-Both cells used `max_num_seqs=1`, AgentX concurrency 64, one TP8 H100 replica, a 256 GiB CPU tier, the filesystem tier, and the same image digest. This is a mechanism-stress configuration, not yet a production concurrency recommendation.
+The BenchFlow matrix has exactly two cells:
 
-## Design status
+- reactive control: tiered CPU/NVMe offload with no `prefetch` block;
+- treatment: identical deployment plus the configuration above.
 
-Accepted for continued research:
+Both use the same v7 image, `max_num_seqs=8`, AgentX concurrency 64, and request opt-in:
 
-- JIT single-owner activation.
-- Earliest-deadline-first bundle choice.
-- Demand-idle-only speculative submission.
-- Demand-priority I/O scheduling.
-- Physical reserve preservation and explicit demand borrowing.
-- Owner-bound cleanup, bounded lease, and exact accounting.
+```json
+{"ignore_eos": true, "kv_transfer_params": {"abc_admission_prefetch": true}}
+```
 
-Not yet established:
+BenchFlow requirement resolution raises the runtime model length to 131,072 tokens for the AgentX profile.
 
-- A causal TTFT or throughput benefit.
-- The best reserve size; 512 blocks did not bind in this run.
-- Robustness across nodes, repetitions, production `max_num_seqs`, and less saturated workloads.
+## Verification completed on August 21, 2026
 
-The next step is not another redesign. Keep this mechanism, run a randomized cross-over with at least three repetitions, eliminate profiling cancellations, and capture GPU and device-specific storage telemetry. Only then tune the reserve or relax the single-sequence mechanism-test constraint.
+- 70 policy tests passed.
+- 117 combined policy, manager, and async-lookup tests passed.
+- 127 tiering/filesystem tests passed; 7 skipped.
+- 52 CPU offload-manager tests passed.
+- 23 focused connector admission/occupancy tests passed; 117 unrelated tests deselected.
+- Ruff check and format validation passed.
+- Python compilation and `git diff --check` passed.
+- BenchFlow experiment validation returned `valid`.
+- Full RunPlan resolution confirmed the two cells share v7 and `max_num_seqs=8`; only treatment has prefetch enabled.
+
+## Research questions for the next run
+
+The v7 AgentX run must determine:
+
+- whether the policy activates under sustained continuous batching;
+- whether spare-worker gating avoids starvation without harming demand;
+- whether eight-chunk I/O slices prevent observable head-of-line blocking;
+- whether ownership always releases on capacity failure, demand, expiry, preemption, finish, and load failure;
+- useful, late, failed, refused, and evicted-before-demand shares;
+- TTFT, throughput, errors, running/waiting requests, GPU KV occupancy, CPU pressure, and CPU↔GPU transfer behavior;
+- NVMe read/write bandwidth, IOPS, latency, queue depth, busy time, and capacity.
+
+## Decision boundary
+
+Continue Version 3.1 if it remains active under continuous load, preserves demand correctness and latency, and retains a materially useful speculative share with bounded storage overhead.
+
+Change direction if the policy still starves despite spare workers, if bounded prefetch measurably degrades demand TTFT, or if exact-prefix opportunities are too sparse to cover the mechanism cost. Do not adopt session-ID or hole-tolerant KV reuse without a correctness proof that the downstream token prefix and attention state are unchanged.
