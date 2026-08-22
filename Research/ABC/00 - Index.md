@@ -101,6 +101,8 @@ The central failure is request-level coverage, not stale scheduling. A 64-chunk 
 
 Do not sweep N yet. Add request-level readiness and admission-to-first-lookup telemetry, then run a one-request full-working-set oracle. Kill admission-time NVMe→CPU prefetch for AgentX if perfect CPU readiness cannot reduce deferred lookup and meet the replicated 5% TTFT or 3% throughput gate.
 
+The working-set oracle code is now implemented but not yet built or benchmarked. It retains the fixed-N baseline and v2 cutoff/fallback, gives one scheduler-ordered request the complete bounded candidate set, adds a per-request eviction budget, and records request-level readiness/defer outcomes. The intended image tag is `v0.27.0-clean-prefetch-oracle-v1`; the first Nemotron ceiling is 8,192 chunks. Focused and tiering tests plus ruff/mypy pass. The full scheduler file remains gated by a mismatched shared virtualenv and must be rerun in the build container.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
