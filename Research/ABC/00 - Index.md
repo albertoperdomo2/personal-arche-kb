@@ -8,6 +8,10 @@ status: "active"
 
 # ABC
 
+## Research reset — 2026-08-21
+
+- [[2026-08-21 - Independent research audit and redirection for speculative KV prefetching|Independent research audit and redirection for speculative KV prefetching]] — **broad opportunity remains, but the current V7 primary path is killed.** The next gate is a perfect-residency oracle, followed by deadline-aware working-set/data-readiness research; do not continue V7 heuristic tuning.
+
 ## Navigation
 
 - [[Reports/00 - Index|Experiment Reports]] — executed benchmark runs, validations, failures, plots, and conclusions.
