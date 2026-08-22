@@ -380,11 +380,51 @@ FIFO is also the wrong ordering under continuous batching. Among still-valid req
 Implement both changes before repeating:
 
 1. **Demand cutoff:** on a request’s first tiering lookup, mark its proactive deadline passed and cancel all remaining unsubmitted plan work for that request. Never start another proactive load for it. Already in-flight work may complete safely and normal reactive fallback is unchanged.
-2. **Deadline-aware ordering:** replace FIFO head-of-line application with a bounded request-priority policy over existing exact intents. Prefer the still-waiting request estimated to reach demand soonest, but expire work whose demand has begun and skip work whose remaining horizon cannot cover estimated transfer readiness.
+2. **Queue-position ordering:** replace asynchronous probe-completion FIFO with a bounded request-priority policy over existing exact intents. Under FCFS, use arrival order; under priority scheduling, use the scheduler's native `(priority, arrival)` order. Expire work as soon as demand begins. Do not add an uncalibrated time-to-demand estimator in this patch.
 3. **Metrics:** add explicit `cancelled_at_first_demand`, `expired_before_submit`, and `submitted_after_demand` accounting. The final counter is an invariant and must remain zero.
 4. **Keep scope narrow:** do not restore V2/V3 temperature prediction, reserve leasing, single-owner state, or synchronous key ranking. Reactive correctness and full-cache eviction remain unchanged.
 
 This is consistent with [[../2026-08-21 - Independent research audit and redirection for speculative KV prefetching|the independent research reset]], which recommends deadline-aware working-set staging and demand-preemptible budgets rather than fixed-N FIFO work.
+
+
+## Follow-up implementation — clean-prefetch v1.1
+
+The surgical correction described above was applied after this experiment in the uncommitted `experimental/clean-prefetch-poc` worktree at `/Users/aperdomo/workspace/redhat/vllm-clean-prefetch`. It deliberately changes prefetch timing and plan selection only; reactive lookup, CPU eviction, tier transfer semantics, and model correctness remain unchanged.
+
+### Implemented behavior
+
+1. `RequestState.prefetch_deadline_passed` becomes true on the request's first `TieringOffloadingManager.lookup()` call.
+2. Completed but unsubmitted plan suffixes for that request are removed immediately and counted as both `cancelled` and `cancelled_at_first_demand`.
+3. A source probe that finishes after the cutoff is discarded before placement and counted as `expired_before_submit`.
+4. New intents for a request are rejected after its deadline.
+5. A defensive guard refuses any promotion path that somehow reaches placement after demand and records `submitted_after_demand`. This is an invariant-violation metric; it must remain zero in experiments.
+6. Completed plans are selected by the scheduler's native order rather than worker probe-completion FIFO:
+   - FCFS: `(0, request.arrival_time)`;
+   - priority scheduling: `(request.priority, request.arrival_time)`;
+   - intent ID breaks exact ties.
+7. Explicit detached prefetch hints remain independent of the synthetic hint request's lifetime and are not cancelled by this cutoff.
+
+The first lookup is a real deadline, not an estimate. Once lookup begins, an unsubmitted promotion cannot hide that lookup. The queue-position key is also factual scheduler state. This patch does **not** estimate whether the remaining queue duration can cover a transfer. Such a model should be added only after the corrected run provides calibrated admission-to-demand and admission-to-ready distributions.
+
+### Touched code
+
+| File | Change |
+|---|---|
+| `vllm/v1/kv_offload/tiering/manager.py` | First-demand cutoff, late-probe expiry, defensive post-demand submission guard, and bounded scheduler-order plan selection |
+| `vllm/v1/kv_offload/tiering/prefetch.py` | Carries the immutable scheduler-order key on each intent |
+| `vllm/v1/kv_offload/base.py` | Extends the optional prefetch-intent API with `scheduler_order` |
+| `vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py` | Maps vLLM's configured FCFS/priority policy and request fields into the intent key |
+| `tests/v1/kv_offload/tiering/test_tiering_offloading.py` | Tests cutoff before apply, probe completion after cutoff, post-demand guard, and scheduler ordering |
+| `tests/v1/kv_connector/unit/offloading_connector/test_scheduler.py` | Tests FCFS and priority key propagation |
+
+### Verification
+
+- 69 relevant tests passed: the entire tiering manager file plus the focused admission-working-set scheduler class.
+- Ruff lint and formatting passed on all six touched production/test files.
+- `git diff --check` passed.
+- The broader scheduler file contains model-fixture tests that attempted Hugging Face network access and failed with DNS/connect errors in the restricted environment; those failures were unrelated to this change. The isolated scheduler class passed.
+- No commit was created.
+
 
 ## Next experiment and gates
 
