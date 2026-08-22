@@ -22,7 +22,8 @@ Executed experiments and their evidence live here. Failed and inconclusive runs 
 
 - [[Reports/2026-08-21 - Clean-prefetch v1 AgentX first comparison|2026-08-21 — Clean-prefetch v1 AgentX first comparison]] — conditionally valid mechanism result: full-cache admission worked with no failures or observed regret, but 98.44% of promotions were late and performance was neutral; concurrent cells and incomplete artifacts prevent a benefit claim.
 - [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — natural queueing reduced late/useful to 44.67%, but the 64-chunk footprint saturated, 256 promotions were wasted, and 586/966 CPU victims incurred eviction regret; performance is mixed and inconclusive.
-- [[2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat and attempted v2 invalidation]] — both cells accidentally reused the exact old v1 digest; invalid for the cutoff/order fix, but a useful repeat showing a 740-second ready-delay p90 and eviction regret above useful outcomes.
+- [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat and attempted v2 invalidation]] — both cells accidentally reused the exact old v1 digest; invalid for the cutoff/order fix, but a useful repeat showing a 740-second ready-delay p90 and eviction regret above useful outcomes.
+- [[Reports/2026-08-22 - Clean-prefetch v2 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v2 AgentX concurrency-64 comparison]] — valid negative policy result: v2 eliminated stale and late work, but 64 chunks covered only 2.49% of the average external prefix, 57.5% of evictions were regretted, and TTFT/throughput did not improve.
 
 ## Detailed evidence appendices
 
