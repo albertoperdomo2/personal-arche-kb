@@ -40,6 +40,7 @@ status: "active"
 - [[Reports/2026-08-21 - Clean-prefetch v1 AgentX first comparison|2026-08-21 — Clean-prefetch v1 AgentX concurrency-32 comparison]] — full-cache admission worked, but 98.44% of useful promotions were late and performance was neutral.
 - [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — real queueing reduced lateness, but FIFO plan saturation and eviction regret make performance inconclusive and motivate demand cutoff plus deadline ordering.
 - [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat / attempted v2 invalidation]] — invalid for the surgical fix because both pods reused the exact v1 digest; the repeat reinforces the stale-FIFO and eviction-regret diagnosis.
+- [[Reports/2026-08-22 - Clean-prefetch v2 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v2 AgentX concurrency-64 comparison]] — v2 mechanically passed but fixed-N=64 failed as a performance policy: timely chunk hits did not make complete requests ready, and eviction regret remained high.
 - [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
@@ -92,6 +93,14 @@ The next clean-branch change is request demand cutoff plus bounded deadline-awar
 
 An attempted corrected-image validation on 2026-08-22 did not contain that change: runs `a6fe8407257c4c90b57771bce155a1f2` and `7f096342a54241ce99c6a98e53a87ca4` both resolved the original v1 digest `7c977def...`. As a v1 repeat, treatment had 1,025 submissions, 511 useful outcomes, 419 wasted outcomes, 576 eviction-regret events, and a 740-second ready-delay p90. It is invalid for accepting or rejecting the demand-cutoff/order patch.
 
+## Clean-prefetch v2 result — 2026-08-22
+
+The corrected v2 pair used one immutable digest and the same H100 node, with nearly identical warmup. The repair worked: 4,670/4,670 submissions promoted, no post-demand submission, no late or failed jobs, and admission-to-ready p90 fell from the v1 repeat's roughly 740 seconds to 1.70 seconds. Performance did not improve: request throughput was 0.56% lower, mean TTFT 2.14% higher, and p95 TTFT 4.05% higher.
+
+The central failure is request-level coverage, not stale scheduling. A 64-chunk bundle covers only 1,024 tokens, versus about 41,153 external tokens per average request. The implementation calls each later CPU hit useful even when the connector still defers the request and reactively promotes thousands of remaining chunks. In addition, 2,684/4,670 proactive evictions were later regretted.
+
+Do not sweep N yet. Add request-level readiness and admission-to-first-lookup telemetry, then run a one-request full-working-set oracle. Kill admission-time NVMe→CPU prefetch for AgentX if perfect CPU readiness cannot reduce deferred lookup and meet the replicated 5% TTFT or 3% throughput gate.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -120,15 +129,15 @@ An attempted corrected-image validation on 2026-08-22 did not contain that chang
 - Version3 v6 JIT treatment (mechanism accepted; performance inconclusive): [5be11650e5a34043a3940c2e57dded74](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/5be11650e5a34043a3940c2e57dded74?workspace=benchflow)
 - Clean-prefetch v1 repeat control: [7f096342a54241ce99c6a98e53a87ca4](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/7f096342a54241ce99c6a98e53a87ca4?workspace=benchflow)
 - Clean-prefetch v1 repeat treatment (invalid for v2; stale FIFO reproduced): [a6fe8407257c4c90b57771bce155a1f2](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/a6fe8407257c4c90b57771bce155a1f2?workspace=benchflow)
+- Clean-prefetch v2 concurrency-64 control: [24df61e44ac34ede8b94d42b23a8cb58](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/24df61e44ac34ede8b94d42b23a8cb58?workspace=benchflow)
+- Clean-prefetch v2 concurrency-64 treatment (valid negative policy result): [c03bf0c79d6844da8069162633bb3d94](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/c03bf0c79d6844da8069162633bb3d94?workspace=benchflow)
 
 ## Next experiment
 
-Version3 is now the active experiment. Keep the v6 mechanism fixed and establish causality before tuning:
+The next clean-branch gate is a request-level oracle, not another fixed-N sweep:
 
-1. swap control and treatment across the two H100 nodes in a randomized cross-over;
-2. collect at least three completed pairs;
-3. extend grace time or reduce pressure so all admitted requests finish;
-4. capture DCGM clocks/utilization/memory/PCIe and device-specific NVMe telemetry;
-5. retain `max_num_seqs=1` for the immediate mechanism test, then repeat at realistic scheduler concurrency;
-6. test a 64-block reserve against 512 only after a clean replicated baseline;
-7. reject a performance claim if warmup diverges before promotion, terminal accounting drifts, promotions are zero, or load failures occur.
+1. measure admission-to-first-lookup, complete external chunks, proactive coverage, full-primary-ready requests, deferred lookup despite proactive hits, and reactive bytes avoided;
+2. stage 25%, 50%, then 100% of the earliest queued request's complete external working set, one request at a time;
+3. preserve v2's first-lookup cutoff and compare normal eviction with controlled CPU reserve;
+4. require at least 50% fewer externally deferred requests plus at least 5% lower mean/p95 TTFT or 3% higher throughput over replicated same-node pairs;
+5. if perfect request-level CPU readiness fails, stop admission-time CPU prefetch and move to scheduler/data-readiness integration or workflow-triggered staging before HTTP admission.
