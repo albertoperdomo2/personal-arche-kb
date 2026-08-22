@@ -37,6 +37,8 @@ status: "active"
 - [[Reports/2026-08-18 - Phase 1 admission prefetch repaired-image validation|2026-08-18 — Phase 1 admission prefetch repaired-image validation]] — mechanism accepted; performance remains provisional.
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch first exploratory run|2026-08-18 — AgentX Weka admission prefetch first exploratory run]] — valid negative policy result at concurrency 32: first-N prefetch ran, but N=100 was mostly redundant, failed, and late.
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|2026-08-18 — AgentX Weka admission prefetch at concurrency 64]] — Phase 1 queue-sensitivity supported: more waiting sharply increased useful yield and reduced lateness; performance remains inconclusive.
+- [[Reports/2026-08-21 - Clean-prefetch v1 AgentX first comparison|2026-08-21 — Clean-prefetch v1 AgentX concurrency-32 comparison]] — full-cache admission worked, but 98.44% of useful promotions were late and performance was neutral.
+- [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — real queueing reduced lateness, but FIFO plan saturation and eviction regret make performance inconclusive and motivate demand cutoff plus deadline ordering.
 - [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
@@ -78,6 +80,14 @@ The next implementation must reserve a bounded speculative block budget, split c
 [[Version3/00 - Index|Version3]] implements JIT activation, one earliest-deadline owner, demand-idle submission, demand-priority filesystem service, explicit demand/speculative allocation modes, physical reserve preservation, owner-bound cleanup, and a one-bundle retention lease. The first v6 treatment promoted 1,024 chunks: 512 useful, 448 wasted, and 64 pending at the measurement boundary. No reserve borrowing or lease reclamation occurred. Useful yield rose from 4.71% in the v5 failure to 50.0%, so the mechanism is accepted for continued research.
 
 The observed AgentX deltas are not causal evidence. Treatment warmup was already 59% shorter and mean TTFT 89% lower while speculative submitted/promoted counters were still zero. The pair also used different nodes, both profiling phases cancelled 51 requests at timeout, and DCGM telemetry was absent. The next experiment is a replicated node cross-over with complete draining and GPU/device-specific telemetry.
+
+## Clean-prefetch reset checkpoint — 2026-08-22
+
+The clean v0.27.0 branch now provides the simplest valid full-cache admission baseline. At concurrency 32 it promoted correct chunks but 98.44% were late because almost no requests waited. At realistic concurrency 64, mean waiting rose to about five and late/useful fell to 44.67%, confirming that queue lead time matters.
+
+The concurrency-64 pair still does not prove benefit. The global 64-chunk footprint remained saturated, admission-to-ready reached 71.96 seconds mean, 256/958 promotions were wasted, and 586/966 ordinary CPU victims were later demanded. Inspection identified a concrete policy-lifetime defect: remaining FIFO work is cancelled only at request finish, so it can be submitted after the request has entered demand lookup.
+
+The next clean-branch change is request demand cutoff plus bounded deadline-aware ordering of existing exact intents. Do not sweep N until post-demand submission is impossible, stale ready-delay tails disappear, and on-time benefit exceeds eviction cost.
 
 ## MLflow run registry
 
