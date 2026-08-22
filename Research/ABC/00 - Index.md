@@ -39,6 +39,7 @@ status: "active"
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|2026-08-18 — AgentX Weka admission prefetch at concurrency 64]] — Phase 1 queue-sensitivity supported: more waiting sharply increased useful yield and reduced lateness; performance remains inconclusive.
 - [[Reports/2026-08-21 - Clean-prefetch v1 AgentX first comparison|2026-08-21 — Clean-prefetch v1 AgentX concurrency-32 comparison]] — full-cache admission worked, but 98.44% of useful promotions were late and performance was neutral.
 - [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — real queueing reduced lateness, but FIFO plan saturation and eviction regret make performance inconclusive and motivate demand cutoff plus deadline ordering.
+- [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat / attempted v2 invalidation]] — invalid for the surgical fix because both pods reused the exact v1 digest; the repeat reinforces the stale-FIFO and eviction-regret diagnosis.
 - [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
@@ -89,6 +90,8 @@ The concurrency-64 pair still does not prove benefit. The global 64-chunk footpr
 
 The next clean-branch change is request demand cutoff plus bounded deadline-aware ordering of existing exact intents. Do not sweep N until post-demand submission is impossible, stale ready-delay tails disappear, and on-time benefit exceeds eviction cost.
 
+An attempted corrected-image validation on 2026-08-22 did not contain that change: runs `a6fe8407257c4c90b57771bce155a1f2` and `7f096342a54241ce99c6a98e53a87ca4` both resolved the original v1 digest `7c977def...`. As a v1 repeat, treatment had 1,025 submissions, 511 useful outcomes, 419 wasted outcomes, 576 eviction-regret events, and a 740-second ready-delay p90. It is invalid for accepting or rejecting the demand-cutoff/order patch.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -115,6 +118,8 @@ The next clean-branch change is request demand cutoff plus bounded deadline-awar
 
 - Version3 v6 JIT control (performance baseline; pair confounded): [19c4d1be0d0b4bbeb6358da05c32721f](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/19c4d1be0d0b4bbeb6358da05c32721f?workspace=benchflow)
 - Version3 v6 JIT treatment (mechanism accepted; performance inconclusive): [5be11650e5a34043a3940c2e57dded74](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/5be11650e5a34043a3940c2e57dded74?workspace=benchflow)
+- Clean-prefetch v1 repeat control: [7f096342a54241ce99c6a98e53a87ca4](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/7f096342a54241ce99c6a98e53a87ca4?workspace=benchflow)
+- Clean-prefetch v1 repeat treatment (invalid for v2; stale FIFO reproduced): [a6fe8407257c4c90b57771bce155a1f2](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/a6fe8407257c4c90b57771bce155a1f2?workspace=benchflow)
 
 ## Next experiment
 
