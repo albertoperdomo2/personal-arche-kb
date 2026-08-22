@@ -21,6 +21,7 @@ Executed experiments and their evidence live here. Failed and inconclusive runs 
 - [[Reports/2026-08-18 - AgentX Weka admission prefetch concurrency 64|2026-08-18 — AgentX Weka admission prefetch at concurrency 64]] — queue-sensitivity supported: useful/attempted rose to 15.81% and late/promoted fell to 42.39%; performance remained mixed and inconclusive.
 
 - [[Reports/2026-08-21 - Clean-prefetch v1 AgentX first comparison|2026-08-21 — Clean-prefetch v1 AgentX first comparison]] — conditionally valid mechanism result: full-cache admission worked with no failures or observed regret, but 98.44% of promotions were late and performance was neutral; concurrent cells and incomplete artifacts prevent a benefit claim.
+- [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — natural queueing reduced late/useful to 44.67%, but the 64-chunk footprint saturated, 256 promotions were wasted, and 586/966 CPU victims incurred eviction regret; performance is mixed and inconclusive.
 
 ## Detailed evidence appendices
 
