@@ -223,6 +223,50 @@ Continue admission-time CPU staging only if the oracle produces all of:
 
 If a 100%-coverage oracle cannot meet those gates, stop admission-time NVMe→CPU prefetch for this workload. The stronger next direction is scheduler/data-readiness co-design around the existing exact promotion path, or earlier workflow-triggered staging during real tool/suspension windows. Those signals can provide lead time before the continuation request even reaches vLLM, unlike a predictor starting at HTTP admission.
 
+## Working-set oracle implementation checkpoint — 2026-08-22
+
+The next diagnostic image is now implemented, but not yet built or run, in `/Users/aperdomo/workspace/redhat/vllm-clean-prefetch` on branch `experimental/clean-prefetch-poc`. No commit was created.
+
+The implementation preserves the v2 off-thread secondary probe, batched speculative loads, first-lookup cutoff, request gate, and reactive fallback. It adds:
+
+- `admission_prefetch_mode: working_set`, which targets every complete prompt chunk up to a general safety ceiling rather than a fixed N;
+- one non-detached scheduler-ordered owner at a time, using native priority/arrival order;
+- `admission_prefetch_max_evictions_per_request`, an explicit bound on ordinary CPU blocks displaced for one request;
+- request-level first-lookup outcomes, including target size, confirmed-ready size, bounded coverage, admission-to-first-lookup horizon, actual deferred versus ready result, time from first defer to ready, and eventual external hit chunks;
+- a retained `fixed` mode so v2 remains available as a negative baseline;
+- container verification and examples for image tag `v0.27.0-clean-prefetch-oracle-v1`.
+
+The initial Nemotron configuration is intentionally model-aware but not hard-coded:
+
+```json
+{
+  "admission_prefetch_mode": "working_set",
+  "admission_prefetch_max_candidate_chunks": 8192,
+  "admission_prefetch_apply_chunks_per_step": 256,
+  "admission_prefetch_load_batch_chunks": 64,
+  "admission_prefetch_max_pending_intents": 64,
+  "admission_prefetch_max_tracked_chunks": 8192,
+  "admission_prefetch_max_evictions_per_request": 8192,
+  "admission_prefetch_max_eviction_history_chunks": 16384,
+  "admission_prefetch_tier_idx": 0
+}
+```
+
+At 16 tokens/chunk, 8,192 chunks cover the configured 131,072-token maximum context. Other models derive the ceiling from their own context and KV chunk size. The request still requires strict Boolean `kv_transfer_params.abc_admission_prefetch=true`.
+
+The eviction control is a bounded budget, **not a carved physical reserve**. A real reserve would require partitioning the CPU allocator and would alter effective control capacity. The first oracle should measure normal production-style displacement with a known maximum; add a symmetric reserved-pool experiment only if full coverage shows benefit but eviction regret masks it.
+
+Verification completed:
+
+- CPU, filesystem, and tiering suites: 121 passed, 7 skipped;
+- focused admission and maximal-prefix scheduler suites: 26 passed;
+- expanded oracle/configuration/manager set: 47 passed;
+- ruff check and format: passed;
+- mypy Python 3.12 hook: passed;
+- `git diff --check`: passed.
+
+The complete scheduler file could not be validated in the shared local environment. With network disabled, its existing tiny-model fixtures could not resolve Hugging Face metadata. With network enabled, the v0.27.0 worktree still inherited a newer shared virtualenv and failed its baseline `VllmConfig` validation before constructing the connector. These are environment/baseline failures, not failures in the focused oracle tests, but the full file should be rerun inside the v0.27.0 build container or a matching clean virtualenv before treating the image as release-quality.
+
 ## Verdict
 
 The clean v2 implementation did what it was designed to do. The current policy objective is the problem: it optimizes timely individual CPU hits, while vLLM's request becomes runnable only when the required external working set is ready. This pair therefore rejects fixed-N=64 admission prefetch as a performance mechanism for realistic AgentX concurrency, while leaving the broader full-working-set or earlier workflow-aware prefetch hypothesis open.
