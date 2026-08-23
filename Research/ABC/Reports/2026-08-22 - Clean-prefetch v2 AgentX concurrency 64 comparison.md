@@ -270,3 +270,47 @@ The complete scheduler file could not be validated in the shared local environme
 ## Verdict
 
 The clean v2 implementation did what it was designed to do. The current policy objective is the problem: it optimizes timely individual CPU hits, while vLLM's request becomes runnable only when the required external working set is ready. This pair therefore rejects fixed-N=64 admission prefetch as a performance mechanism for realistic AgentX concurrency, while leaving the broader full-working-set or earlier workflow-aware prefetch hypothesis open.
+
+## Planned full-working-set oracle execution — 2026-08-23
+
+BenchFlow is configured for the first discriminating oracle gate in `experiments/rhoai/abc.yaml`. It resolves to exactly two cells:
+
+| Role | Deployment profile | Server-side prefetch |
+|---|---|---|
+| Reactive control | `multi-tier-offloading-nvme` | disabled |
+| Working-set oracle | `clean-prefetch-cpu-kv-offload-nvme` | one scheduler-ordered request, bounded complete working set |
+
+Controlled dimensions are image `quay.io/rh-ee-aperdomo/vllm:v0.27.0-clean-prefetch-oracle-v1`, RHOAI 3.5 / `stable-3.5`, FP8 Nemotron 253B, TP=8, one replica, GPU memory utilization 0.8, maximum model length 131,072, 256 GiB CPU tier, local NVMe with 64 read and 64 write threads, AgentX/Weka concurrency 64, seed 20260707, 1,800-second profiling duration, and the vLLM default `max-num-seqs`. Both cells receive the strict Boolean request input `{"kv_transfer_params":{"abc_admission_prefetch":true}}`; it is inert in control because the server mode is disabled.
+
+The treatment uses:
+
+```json
+{
+  "admission_prefetch_mode": "working_set",
+  "admission_prefetch_max_candidate_chunks": 8192,
+  "admission_prefetch_apply_chunks_per_step": 256,
+  "admission_prefetch_load_batch_chunks": 64,
+  "admission_prefetch_max_pending_intents": 64,
+  "admission_prefetch_max_tracked_chunks": 8192,
+  "admission_prefetch_max_evictions_per_request": 8192,
+  "admission_prefetch_max_eviction_history_chunks": 16384,
+  "admission_prefetch_tier_idx": 0
+}
+```
+
+This is intentionally a two-cell test, not an N sweep. The existing fixed-64 result already establishes that timely individual chunk hits are insufficient. The next uncertainty is whether bounded complete request readiness is physically achievable early enough to improve end-to-end performance.
+
+The `detailed` metrics profile now preserves both cumulative totals and native 15-second rate series for chunk and request outcomes. It additionally captures:
+
+- request target chunks, ready chunks, and coverage at first lookup;
+- request outcomes by status, including complete/incomplete and ready/deferred at first lookup;
+- admission-to-first-lookup and first-lookup-to-ready latency;
+- eventual external-hit chunks and active working-set owners;
+- submission, promotion, lateness, cancellation, failure, waste, eviction, and eviction-regret outcomes;
+- reactive tiering lookup stalls, CPU-cache fill/free/evictable/write-pending state, and transfer rates;
+- NVMe read/write bandwidth, operations, latency, queue/busy signals where exported;
+- request throughput, token throughput, TTFT, E2E latency, queueing, preemption, GPU/DCGM, PCIe, CPU, and memory pressure.
+
+Local validation on 2026-08-23 passed: `bflow experiment validate` accepted the experiment, and `bflow experiment resolve` produced two RunPlans with identical client and runtime settings except for the treatment's working-set fields. The resolved detailed collector contains 202 Prometheus queries.
+
+Acceptance remains the gate already stated above: first establish substantial complete-at-first-lookup coverage and fewer deferred external-KV requests; then require replicated improvement of at least 5% in mean/p95 TTFT or 3% in throughput without post-demand submissions, load failures, or negative eviction economics.
