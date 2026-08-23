@@ -25,6 +25,8 @@ Executed experiments and their evidence live here. Failed and inconclusive runs 
 - [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat and attempted v2 invalidation]] — both cells accidentally reused the exact old v1 digest; invalid for the cutoff/order fix, but a useful repeat showing a 740-second ready-delay p90 and eviction regret above useful outcomes.
 - [[Reports/2026-08-22 - Clean-prefetch v2 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v2 AgentX concurrency-64 comparison]] — valid negative policy result: v2 eliminated stale and late work, but 64 chunks covered only 2.49% of the average external prefix, 57.5% of evictions were regretted, and TTFT/throughput did not improve.
 
+- [[Reports/2026-08-23 - Working-set oracle AgentX first comparison|2026-08-23 — Working-set oracle AgentX first comparison]] — mechanism active but the intended oracle condition failed: only 20/2,638 intents were fully ready at first lookup; performance was mixed and near-neutral.
+
 ## Detailed evidence appendices
 
 The 2026-08-10, 2026-08-17, and both AgentX Weka report directories contain native-cadence mechanism, scheduler, latency, storage, transfer, and saturation appendices linked from their parent reports.
