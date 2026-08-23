@@ -10,6 +10,7 @@ status: "active"
 
 ## Research reset — 2026-08-21
 
+- [[2026-08-23 - ABC prefetch research brief for feedback|ABC KV-cache prefetching — short research brief for feedback]] — shareable one-page-style summary of the tested strategies, decisive metrics, negative results, and feedback questions.
 - [[2026-08-21 - Independent research audit and redirection for speculative KV prefetching|Independent research audit and redirection for speculative KV prefetching]] — **broad opportunity remains, but the current V7 primary path is killed.** The next gate is a perfect-residency oracle, followed by deadline-aware working-set/data-readiness research; do not continue V7 heuristic tuning.
 
 ## Navigation
