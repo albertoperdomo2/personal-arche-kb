@@ -41,6 +41,7 @@ status: "active"
 - [[Reports/2026-08-22 - Clean-prefetch v1 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v1 AgentX concurrency-64 comparison]] — real queueing reduced lateness, but FIFO plan saturation and eviction regret make performance inconclusive and motivate demand cutoff plus deadline ordering.
 - [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat / attempted v2 invalidation]] — invalid for the surgical fix because both pods reused the exact v1 digest; the repeat reinforces the stale-FIFO and eviction-regret diagnosis.
 - [[Reports/2026-08-22 - Clean-prefetch v2 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v2 AgentX concurrency-64 comparison]] — v2 mechanically passed but fixed-N=64 failed as a performance policy: timely chunk hits did not make complete requests ready, and eviction regret remained high.
+- [[Reports/2026-08-23 - Working-set oracle AgentX first comparison|2026-08-23 — Working-set oracle AgentX first comparison]] — valid negative result for admission-time single-owner staging: 99.24% of intents still deferred at first lookup and performance remained near-neutral.
 - [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
@@ -103,6 +104,14 @@ Do not sweep N yet. Add request-level readiness and admission-to-first-lookup te
 
 The working-set oracle code is now implemented but not yet built or benchmarked. It retains the fixed-N baseline and v2 cutoff/fallback, gives one scheduler-ordered request the complete bounded candidate set, adds a per-request eviction budget, and records request-level readiness/defer outcomes. The intended image tag is `v0.27.0-clean-prefetch-oracle-v1`; the first Nemotron ceiling is 8,192 chunks. Focused and tiering tests plus ruff/mypy pass. The full scheduler file remains gated by a mismatched shared virtualenv and must be rerun in the build container.
 
+## Working-set oracle first result — 2026-08-23
+
+The first working-set pair used the intended immutable image and concurrency-64 AgentX configuration. The treatment promoted 676,388 chunks, of which 99.55% were eventually useful, with no load failures or post-demand submissions. That high chunk usefulness did not translate into request readiness: only 20/2,638 intents (0.76%) were fully ready at the connector's first lookup, while 2,618 still deferred into reactive loading.
+
+The manager-local `prefetch_complete_at_first_lookup=754` is not the authoritative readiness result. The target currently shrinks at the first admission-time source miss, so it describes completion of a shortened, probeable subset. The connector later observes the actual external working set. Preserve the original denominator and separate subset completion from full request readiness.
+
+Performance was mixed and below the gate: request throughput +0.16%, mean TTFT -1.87%, p95 TTFT +1.11%, and p99 TTFT +6.51%. Do not increase N: no working set hit the 8,192-chunk ceiling. The next blocker is source readiness, owner reach, and deadline-complete coverage, plus trustworthy eviction accounting.
+
 ## MLflow run registry
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
@@ -134,12 +143,17 @@ The working-set oracle code is now implemented but not yet built or benchmarked.
 - Clean-prefetch v2 concurrency-64 control: [24df61e44ac34ede8b94d42b23a8cb58](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/24df61e44ac34ede8b94d42b23a8cb58?workspace=benchflow)
 - Clean-prefetch v2 concurrency-64 treatment (valid negative policy result): [c03bf0c79d6844da8069162633bb3d94](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/c03bf0c79d6844da8069162633bb3d94?workspace=benchflow)
 
+- Working-set oracle control: [a34cca262119453a9837a2531c79c3de](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/a34cca262119453a9837a2531c79c3de?workspace=benchflow)
+- Working-set oracle treatment (mechanism active; negative readiness result): [39a70a1b52e241bcb48abe5338d56110](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/39a70a1b52e241bcb48abe5338d56110?workspace=benchflow)
+
 ## Next experiment
 
-The next clean-branch gate is a request-level oracle, not another fixed-N sweep:
+The current pair did not realize a perfect-residency oracle. Before another performance sweep:
 
-1. measure admission-to-first-lookup, complete external chunks, proactive coverage, full-primary-ready requests, deferred lookup despite proactive hits, and reactive bytes avoided;
-2. stage 25%, 50%, then 100% of the earliest queued request's complete external working set, one request at a time;
-3. preserve v2's first-lookup cutoff and compare normal eviction with controlled CPU reserve;
-4. require at least 50% fewer externally deferred requests plus at least 5% lower mean/p95 TTFT or 3% higher throughput over replicated same-node pairs;
-5. if perfect request-level CPU readiness fails, stop admission-time CPU prefetch and move to scheduler/data-readiness integration or workflow-triggered staging before HTTP admission.
+1. preserve the immutable complete candidate target and distinguish selected-subset completion from connector-authoritative full readiness;
+2. ensure or gate on source residency, or re-probe transient admission misses while mirroring completes;
+3. repair eviction-outcome coverage, since 64.8% of victim outcomes exceeded the current history;
+4. require the treatment to make at least 50% fewer requests defer before interpreting latency;
+5. then run replicated same-node crossovers and require at least 5% lower mean/p95 TTFT or 3% higher throughput.
+
+Do not increase the 8,192-chunk ceiling: the observed working sets were not clipped. If genuine request readiness still cannot meet the end-to-end gate, stop admission-time CPU staging and move prediction earlier than HTTP admission or integrate staging with source-data readiness.
