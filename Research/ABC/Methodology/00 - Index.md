@@ -20,6 +20,8 @@ Definitions, experiment plans, implementation tutorials, and design discussions 
 
 - [[Methodology/06 - Deep Speculative Prefetching and Temperature Characterization|06 — Deep Speculative Prefetching and Temperature Characterization]] — literature synthesis motivating the event-driven temperature design.
 
+- [[07 - Dynamic admission and cross-scope prefetch roadmap|07 — Dynamic admission and cross-scope prefetch roadmap]] — model-neutral byte/deadline admission policy and the additional components required for cross-vLLM, temperature, and cross-session prefetch.
+
 ## Implementation guides
 
 - [[Methodology/02 - Phase 1 Naive Prefetch Implementation Guide|02 — Phase 1 Naive Prefetch Implementation Guide (historical)]] — rejected post-miss same-request read-ahead implementation, retained in two linked parts.
