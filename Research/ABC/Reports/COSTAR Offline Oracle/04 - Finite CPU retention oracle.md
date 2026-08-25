@@ -22,6 +22,12 @@ Test whether better CPU admission and eviction can avoid native secondary reads 
 
 ## Verdict — Valid diagnostic
 
+## Subsequent interpretation correction — 2026-08-25
+
+[[Future-Value Placement/01 - Experiment 1 matched next-use admission decomposition|The matched admission decomposition]] compared the same bypass-capable next-use rule with a forced-admit next-use policy. Both made all 42 nonempty external targets CPU-complete and avoided all 12 reads / 36.440 seconds.
+
+Therefore this report remains valid evidence of placement headroom, but its original causal wording was too strong: **arrival refusal is not required for the movement result under the common-arrival C32 replay.** Future-aware victim selection alone obtains the same result. Refusal reduces matched-policy admissions by 48.3%, evictions by 75.0%, and combined churn by 58.8%.
+
 For all 898 non-aborted requests, reconstructed CPU target completeness agrees exactly with whether a native secondary→CPU read occurred. This validates the movement-specific oracle. Clairvoyant next-use eliminates all 12 native reads at the same physical capacity.
 
 This is not an end-to-end performance prediction. The policy has perfect future knowledge, uses baseline arrivals as free counterfactual inputs, and does not model the residual asynchronous secondary existence check.
@@ -56,7 +62,7 @@ Figure 2 shows how the clairvoyant policy changes cache churn. Source: recorded 
 {"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 2 — Finite-CPU cache actions","width":680,"height":300,"data":{"values":[{"policy_action":"Recorded · admissions","events":416709,"policy":"Recorded"},{"policy_action":"Recorded · evictions","events":285637,"policy":"Recorded"},{"policy_action":"LRU · admissions","events":405217,"policy":"Always-admit LRU"},{"policy_action":"LRU · evictions","events":274145,"policy":"Always-admit LRU"},{"policy_action":"Clairvoyant · admissions","events":190374,"policy":"Clairvoyant next-use"},{"policy_action":"Clairvoyant · rejected","events":177891,"policy":"Clairvoyant next-use"},{"policy_action":"Clairvoyant · evictions","events":59302,"policy":"Clairvoyant next-use"}]},"mark":{"type":"bar"},"encoding":{"x":{"field":"policy_action","type":"nominal","title":"Policy action","axis":{"labelAngle":-25}},"y":{"field":"events","type":"quantitative","title":"Cache events (count)","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Policy","scale":{"scheme":"category10"}},"tooltip":[{"field":"policy_action","type":"nominal","title":"Action"},{"field":"events","type":"quantitative","title":"Events","format":","}]}}
 ~~~
 
-The oracle's main action is refusal: it prevents low-future-value mirrored arrivals from displacing nearer-use state. This cuts eviction churn by 79.2% relative to recorded residency.
+The bypass-capable policy's largest action-count difference is refusal: it prevents 177,891 low-future-value arrivals from displacing nearer-use state and cuts eviction churn by 79.2% relative to recorded residency. Subsequent matched decomposition shows this refusal is **not necessary** for the 12-read result: forced-admit next-use victim selection also avoids every native read, but with substantially more churn.
 
 ## Critical semantic correction
 
@@ -73,7 +79,7 @@ The earlier total-prefix interpretation was rejected and the preceding offline r
 
 ## Interpretation and decision
 
-This experiment establishes meaningful oracle headroom for **admission/retention policy**: the configured CPU capacity is sufficient to retain all 116,409 unique externally reused keys, but ordinary mirroring introduces 368,265 unique keys overall and causes valuable reuse state to be displaced. Perfect next-use admission avoids all measured native reloads without increasing capacity.
+This experiment establishes meaningful headroom for **future-aware placement**: the configured CPU capacity is sufficient to retain all 116,409 unique externally reused keys, but ordinary mirroring introduces 368,265 unique keys overall and causes valuable reuse state to be displaced. The later matched decomposition establishes that perfect next-use victim selection can avoid all measured native reloads even under forced admission; bypass primarily reduces churn in this trace.
 
 It does not establish that an online predictor can identify those keys, that all 36.44 seconds are exposed TTFT, or that proactive NVMe reads are needed. The next experiment should measure information value: how early and accurately must a practical signal rank future external reuse to recover a useful fraction of the clairvoyant retention result?
 
