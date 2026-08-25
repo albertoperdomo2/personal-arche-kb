@@ -25,9 +25,10 @@ The equal-capacity placement opportunity is now validated in both pressure regim
 - Prompt-size value bands reproduce descriptively across pressure regimes, but the frozen C32 hard-priority policy fails badly on C64.
 - Experiment 7's soft static ranker fails the held-out capacity-weighted gate: C32→C64 request-context AUC is 0.674, yet byte-weighted AUC is 0.472 and top-25%-byte future-reference lift is only 0.788×.
 - Experiment 8's age-, prompt-, request-, and coarse-prefix-conditioned hazards also fail. C32→C64 request+prefix hazard recovers 54.30% of 30-second oracle utility versus 68.52% for always admit; C64→C32 it collapses to always admit and recovers 0.58% versus 99.47% for keeping the victim.
-- Experiment 9 finds exact, complete AgentX-to-vLLM identity joins and abundant repeated conversations. Structural lineage alone still ranks below random by bytes, but combined bundle+lineage context crosses the held-out gate weakly: byte-weighted AUC 0.548/0.567 and top-25%-capacity value lift 1.049×/1.320×. Same-corpus trace identity provides only a 1.15–1.37× upper bound.
+- Experiment 9 finds exact, complete AgentX-to-vLLM identity joins and abundant repeated conversations. Structural lineage alone still ranks below random by bytes, but combined bundle+lineage context crosses the held-out aggregate-ranking gate weakly: byte-weighted AUC 0.548/0.567 and top-25%-capacity value lift 1.049×/1.320×.
+- Experiment 10 shows that this weak aggregate signal is not decision-sufficient. The lineage-conditioned deadline/victim hazard loses to the stronger simple action in five of six held-out cells, including 2.44% versus 99.47% utility at C64→C32/30 seconds. Its only win is C64→C32/600 seconds: 64.21% versus 60.91%.
 
-The next research step is a **lineage-conditioned, horizon- and victim-aware offline utility gate**. Do not implement a live policy from the weak aggregate-ranking result.
+The tested intra-replica coarse-lineage hazard is stopped. The next research step is an **offline multi-replica route-to-data experiment** using conversation affinity and a key-overlap routing oracle under explicit load-balance constraints.
 
 ## Experiment registry
 
@@ -42,6 +43,7 @@ The next research step is a **lineage-conditioned, horizon- and victim-aware off
 | [[07 - Experiment 7 held-out soft bundle-value ranking|07 — Held-out soft bundle-value ranking]] | 2026-08-25 | Valid negative result | Static context predicts some reused bundles but fails byte-weighted C32→C64 value ranking; do not replay live |
 | [[08 - Experiment 8 held-out age-conditioned reuse hazard|08 — Held-out age-conditioned reuse hazard]] | 2026-08-25 | Valid negative result | Age and coarse prefix context collapse to pressure-specific global actions; instrument activity identity next |
 | [[09 - Experiment 9 AgentX identity coverage and held-out lineage information|09 — AgentX identity coverage and held-out lineage information]] | 2026-08-25 | Valid positive-but-weak information result | Exact lineage is available offline; require deadline/victim-aware net utility before policy replay |
+| [[10 - Experiment 10 lineage-conditioned deadline and victim utility gate|10 — Lineage-conditioned deadline and victim utility gate]] | 2026-08-25 | Valid negative result | Stop the tested lineage hazard; test multi-replica route-to-data offline |
 
 ## Accepted corpora
 
@@ -71,14 +73,13 @@ Initial offline tools selected the last resolved connector lookup. C64 exposed 3
 
 ## Next experiment
 
-Run one more offline discriminating experiment before cache replay.
+Run the multi-replica route-to-data experiment offline.
 
-- Add the exact joined lineage features to Experiment 8's age- and deadline-conditioned arrival-versus-LRU-victim comparison.
-- Freeze the policy bidirectionally between C32 and C64; do not use raw trace ID as a generalizable feature.
-- Measure horizon-discounted substitution utility, candidate/victim decisions, complete-request impact, and avoided native service.
-- Require improvement over the stronger simple action at the same horizon in both directions. Aggregate AUC alone is insufficient.
-- If the gate fails, stop predictor elaboration on the current fields and investigate explicit application intent, tool/suspension events, route-to-data, or deterministic session placement.
-- Before any live policy, propagate only the minimal privacy-safe structural fields required by the successful offline ablation into the request context and oracle trace.
+- Replay 2, 4, and 8 finite CPU caches with the exact AgentX request order.
+- Compare random/round-robin routing, deterministic conversation affinity, and a key-overlap routing oracle.
+- Enforce an explicit load-balance/skew limit; a policy may not win by routing every request to one replica.
+- Measure complete external working sets, shared-tier reads and bytes, avoided native service, per-replica occupancy/churn, and routing skew.
+- If conversation affinity is useful but the oracle gap remains large, investigate overlap-aware endpoint selection. If both are negligible, move to explicit application intent/tool-suspension events or stop identity-based placement.
 
 ## Related evidence
 
