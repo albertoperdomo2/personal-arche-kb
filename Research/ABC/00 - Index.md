@@ -10,8 +10,8 @@ status: "active"
 
 ## Research reset — 2026-08-21
 
-- [[Future-Value Placement/00 - Index|COSTAR future-value placement experiments]] — Experiment 1 decomposes the finite-retention result: matched forced-admit and bypass-capable next-use policies both avoid 12/12 reads and 36.44 seconds; bypass is not required for the movement result but cuts matched-policy churn by 58.8%.
-- [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — C32 oracle trace accepted (2.24M events, zero validator errors); C64 object is present but awaits source-side trace certification because MLflow cannot stream the 6.96 GB artifact.
+- [[Future-Value Placement/00 - Index|COSTAR future-value placement experiments]] — C32 and C64 now validate substantial equal-capacity placement headroom. Matched next-use avoids 12/12 reads on C32 and 144/212 on C64; future-aware victim ranking produces the movement result while bypass reduces churn. Practical exact-key and hard contextual policies remain negative.
+- [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — both oracle traces are accepted: C32 has 2.24M events and C64 has 13.63M, with closed lifecycles/transfers, exact capacity conservation, checksums, and zero native-movement reconstruction mismatches.
 - [[Reports/COSTAR Offline Oracle/00 - Index|COSTAR offline oracle experiment series]] — corrected external-target replay shows only 42/901 requests reuse external KV; the finite 131,072-slot clairvoyant retention policy avoids all 12 native reads and 36.44 seconds of measured device service. Next: value-of-information baselines for practical retention admission.
 - [[2026-08-23 - ABC prefetch research brief for feedback|ABC KV-cache prefetching — short research brief for feedback]] — shareable one-page-style summary of the tested strategies, decisive metrics, negative results, and feedback questions.
 - [[2026-08-21 - Independent research audit and redirection for speculative KV prefetching|Independent research audit and redirection for speculative KV prefetching]] — **broad opportunity remains, but the current V7 primary path is killed.** The next gate is a perfect-residency oracle, followed by deadline-aware working-set/data-readiness research; do not continue V7 heuristic tuning.
@@ -122,9 +122,9 @@ Performance was mixed and below the gate: request throughput +0.16%, mean TTFT -
 
 [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|The initial COSTAR oracle-corpus batch]] used stock-reactive vLLM with one immutable image across AgentX/Weka C32 and C64 cells. C32 passed the complete automated validator: 2,241,218 events, 901 closed request lifecycles, exact transfer joins, no sequence or capacity errors, and reconstructed CPU occupancy reaching exactly 131,072 blocks. Its median/p95 HTTP-admission-to-first-lookup horizon was only 7.48/25.15 ms while the mean complete working set was about 7.93 GiB. This strengthens the case for an earlier completion-oriented oracle and contradicts the idea that admission-time selection normally provides enough time to stage complete requests.
 
-The C64 benchmark is operationally clean and the manually recovered 6.96 GB object is visible in MLflow, but the proxy returns 504 before streaming it. Treat C64 as a valid pressure-run and only a conditionally accepted corpus until the original file passes source-side validation and a checksum/report is uploaded.
+The complete C64 trace was recovered and accepted: 6,959,277,072 bytes, SHA-256 `1167b512741bb97d2b76744cb238ede58fa0c6c2ef35ad7b3e9892c05b4ece3d`, 13,629,779 normalized events, and zero lifecycle, transfer, capacity, or native-movement replay errors.
 
-Next: normalize C32, reproduce native ready/deferred and timing outcomes, certify C64, add chunked/compressed trace artifacts, then run the physically constrained clairvoyant oracle. This batch does not establish prefetch benefit.
+Next: build and validate a soft request/prefix expected-value ranking across C32 and C64. Add chunked/compressed trace artifacts for future collections. This corpus validation does not establish live prefetch benefit.
 
 ## MLflow run registry
 
