@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-18
+last_updated: 2026-08-25
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -33,6 +33,16 @@ last_updated: 2026-08-18
 - **`pkg/epp/README.md` links 404 after the GIE API consolidation** · Low · Confirmed — Repoint links to current locations or convert to relative in-repo references; verify with link checker (.lychee.toml)  <!-- fp: llm-d/llm-d-router:issue:epp-readme-broken-links -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2433
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/README.md#L3-L13
+- **Data race in TestFlowControlAdmissionController_Admit under -race (parallel sub-tests share reqCtx)** · Medium · Confirmed — Give each sub-test its own `reqCtx` via a `newReqCtx()` helper inside each `t.Run` closure, matching sibling `TestFlowControlAdmissionController_StampsQueueDuration`  <!-- fp: llm-d/llm-d-router:issue:flowcontrol-admission-test-data-race -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2543
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/requestcontrol/admission.go#L185-L186
+- **flowcontrol: no startup warning when refresh-metrics-interval exceeds a detector's staleness threshold** · Medium · Confirmed — After plugin defaulting and refresh-interval floor clamp, log a startup warning naming the detector and both effective values when `refreshMetricsInterval > metricsStalenessThreshold`  <!-- fp: llm-d/llm-d-router:issue:flowcontrol-refresh-exceeds-staleness-no-warning -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2514
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/server/options.go
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization/config.go
+- **Add OTel traces to prefix-cache filter decisions (metrics-only today)** · Low · Confirmed — Add a `tracer.Start` span in `Filter` emitting decision outcome, affinity threshold, sticky/non-sticky counts, and TTFT gate result as span attributes, mirroring the disagg handler's `llm_d.epp.*` attribute scheme  <!-- fp: llm-d/llm-d-router:issue:otl-traces-prefix-cache-filter-decisions -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2539
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214
 
 ## Bugs
 
@@ -70,6 +80,22 @@ last_updated: 2026-08-18
 - **Always-disagg P/D decider runs prefill work on decode pods when no prefiller is READY instead of failing** · Medium · Likely — Trace prefill-filter + pd_profile_handler path for empty-READY-prefiller case; propose fail-closed (503/rejected-no-endpoints) so misconfigured prefill tiers don't silently fall through to decode  <!-- fp: llm-d/llm-d-router:issue:pd-always-disagg-runs-prefill-on-decode-when-no-prefillers-ready -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2427
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/always_disagg_pd_decider.go#L48-L50
+- **inflightload gauges use raw client-supplied fairness_id label, bypassing boundFairnessID cardinality guard** · High · Confirmed — Route the inflightload `fairnessID` through `metrics.BoundFairnessID(...)` at all four `WithLabelValues` call sites (PreRequest Inc/Add, OnEvicted Sub/Dec, releaseTokensEarly Sub) so paired increment/decrement stay balanced under the same bounded value  <!-- fp: llm-d/llm-d-router:bug:inflightload-fairness-id-label-unbounded-cardinality -->
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L410
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L456-L457
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L41
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/metrics/cardinality.go#L100-L112
+- **inflightload GaugeVec series leaked on endpoint deletion (cardinality leak; issue's value-drift claim contradicted by OnEvicted)** · Medium · Likely — Prune the series in the `EventDelete` branch of `Extract` using `DeletePartialMatch(prometheus.Labels{"endpoint_name": name})` on both vectors; add a registry-scrape regression test asserting zero series for a deleted endpoint after in-flight requests drain  <!-- fp: llm-d/llm-d-router:bug:inflightload-gaugevec-series-leaked-on-endpoint-deletion -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2529
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L710-L712
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L352
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L196-L205
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L41
+- **InitTracing silently substitutes 10% sampling for unsupported sampler values and unparseable args** · Medium · Confirmed — Map each standard `OTEL_TRACES_SAMPLER` value to its SDK constructor in a `newSampler` helper, route parse and range failures through the error handler, reject ratios outside `[0,1]`; add table-driven tests asserting `sampler.Description()` per value  <!-- fp: llm-d/llm-d-router:bug:otel-sampler-fallback-silently-10pct -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2530
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/common/observability/tracing/telemetry.go#L76-L86
 
 ## Performance
 
@@ -83,6 +109,11 @@ last_updated: 2026-08-18
 - **podsPerKeyPrintHelper builds a full string map dump on every ScoreTokens call regardless of trace logging being enabled** · Medium · Confirmed — Gate behind `traceLogger.V(logging.TRACE).Enabled()` or use a lazy marshaler so the O(B·N) map walk + quadratic string concatenation only runs when TRACE logging is on  <!-- fp: llm-d/llm-d-router:perf:scoretokens-podsperkeyprinthelper-eager-eval -->
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvcache/indexer.go#L189-L190
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvcache/indexer.go#L218-L229
+- **estimateRequestTokens / EstimateInput recomputed in PreRequest after Produce already computed and stored it** · Low · Likely — In `PreRequest`, read the stored `UncachedRequestTokens` attribute via `endpoint.Get(p.uncachedRequestTokensDk)` instead of recomputing `estimateRequestTokens`; confirm equality with a test before relying on it  <!-- fp: llm-d/llm-d-router:perf:inflightload-redundant-estimate-request-tokens-produce-prerequest -->
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L372
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L380
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L409
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L452
 
 ## Features & RFCs
 
@@ -124,5 +155,23 @@ last_updated: 2026-08-18
   <!-- fp: llm-d/llm-d-router:feature:zmq-replay-cooldown-dropped-events-metric -->
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L207-L211
   - code: https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L222-L224
+- **Generalize boundFairnessID/boundModel into a bounded-label wrapper enforced for all producer-owned metric vectors** · Medium · Confirmed
+  - **Problem:** The project's `boundedLabel` cardinality guard (cap 1000, collapse to "other") is opt-in per call site in `pkg/epp/metrics`, but producer-owned GaugeVecs in `pkg/epp/framework/plugins/...` call `WithLabelValues` with raw client-derived values directly — the inflightload producer bypasses the guard entirely (see the High-severity bug above). Any new producer metric can reintroduce the same unbounded-cardinality defect.
+  - **Proposed approach:** Propose a `BoundedGaugeVec`/`BoundedCounterVec` wrapper (or a `WithBoundedLabelValues` helper) that producers must use for any label fed by request data, so the cardinality cap is enforced at the metric-construction boundary. Migrate inflightload as the first consumer and add a lint/test guard that no producer-owned `*Vec` calls raw `WithLabelValues` on a client-derived label.
+  - **Impact:** Makes the cardinality cap structural rather than convention-dependent; prevents memory-exhaustion DoS from client-supplied labels.
+  - **Rough effort:** Low-Medium — wrapper type + migrate inflightload + lint guard.
+  <!-- fp: llm-d/llm-d-router:feature:unified-bounded-label-wrapper-for-producer-metrics -->
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/metrics/cardinality.go#L100-L112
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L456-L457
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L41
+- **Establish an OTel span convention for all scheduling filter/scorer decisions, using the disagg handler as the template** · Low · Likely
+  - **Problem:** The disagg `HeadersHandler.PreRequest` opens a `prepare_disaggregation` span and emits structured `llm_d.epp.*` attributes for every decision branch, but the scheduling filters and scorers (e.g. `prefix-cache-affinity-filter`) record outcomes only as Prometheus counter increments with no span — the per-request routing rationale (why sticky was kept or broken, TTFT gate margin) is absent from traces. Issue #2539 requests this for the prefix-cache filter specifically.
+  - **Proposed approach:** Define a span convention (span name per plugin type, standard attribute keys for outcome, thresholds, and candidate counts before/after) in the scheduling plugin interface; add spans to `Filter`/`Score` implementations starting with `prefix-cache-affinity-filter`. Gate behind the existing `--tracing` flag so disabled deployments pay no cost.
+  - **Impact:** Consistent debugging surface across the whole scheduling pipeline; per-request routing rationale visible in traces.
+  - **Rough effort:** Low-Medium — interface change + implement for each filter/scorer.
+  <!-- fp: llm-d/llm-d-router:feature:otlp-spans-for-all-scheduling-filter-scorer-decisions -->
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214
+  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_headers_handler.go#L91-L96
 
 ## Recently Resolved
