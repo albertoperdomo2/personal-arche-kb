@@ -10,6 +10,7 @@ status: "active"
 
 ## Research reset — 2026-08-21
 
+- [[Future-Value Placement/00 - Index|COSTAR future-value placement experiments]] — Experiment 1 decomposes the finite-retention result: matched forced-admit and bypass-capable next-use policies both avoid 12/12 reads and 36.44 seconds; bypass is not required for the movement result but cuts matched-policy churn by 58.8%.
 - [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — C32 oracle trace accepted (2.24M events, zero validator errors); C64 object is present but awaits source-side trace certification because MLflow cannot stream the 6.96 GB artifact.
 - [[Reports/COSTAR Offline Oracle/00 - Index|COSTAR offline oracle experiment series]] — corrected external-target replay shows only 42/901 requests reuse external KV; the finite 131,072-slot clairvoyant retention policy avoids all 12 native reads and 36.44 seconds of measured device service. Next: value-of-information baselines for practical retention admission.
 - [[2026-08-23 - ABC prefetch research brief for feedback|ABC KV-cache prefetching — short research brief for feedback]] — shareable one-page-style summary of the tested strategies, decisive metrics, negative results, and feedback questions.
