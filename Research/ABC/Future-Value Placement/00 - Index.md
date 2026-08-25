@@ -20,14 +20,14 @@ This series follows the corrected offline retention result. It treats proactive 
 
 [[02 - Experiment 2 practical forced-admit policy benchmark|Experiment 2]] finds that seven practical exact-key history policies fail to recover that oracle opportunity. None beats recorded placement's 30/42 complete external requests. LRU and FIFO are least harmful at 27/42 but each creates three net additional incomplete requests; LRFU has the best practical block-hit rate at 67.53% but still creates four net additional misses. This demonstrates that block-hit ratio is not the correct placement objective and strongly suggests that exact-key history becomes informative too late for many first-reuse decisions.
 
-The program remains viable as **future-value, request/prefix-aware placement research**, but generic LRU/ARC/frequency/reuse-distance replacement is not the next live implementation.
+The program remains viable as **future-value, request/prefix-aware placement research**, but generic LRU/ARC/frequency/reuse-distance replacement is not the next live implementation.\n\n[[03 - Experiment 3 first-admission information audit|Experiment 3]] explains the failure: all 116,409 valuable ordinary arrivals are first-seen keys with no prior exact-key demand. Exact-key history is therefore unavailable at the decisive admission. Future demand is strongly request-structured—83.69% of target keys come from the dominant origin—and has a 398-second median horizon. The next candidate should retain coherent request/prefix bundles using source context, not predict isolated blocks.
 
 ## Experiment registry
 
 | Experiment | Date | Status | Decision |
 |---|---|---|---|
 | [[01 - Experiment 1 matched next-use admission decomposition|01 — Matched next-use admission decomposition]] | 2026-08-25 | Conditionally valid diagnostic | Practical future-value victim ranking is the main opportunity; bypass remains a churn optimization |
-| [[02 - Experiment 2 practical forced-admit policy benchmark|02 — Practical forced-admit policy benchmark]] | 2026-08-25 | Conditionally valid negative result | Do not implement the seven history-only policies live; audit information available at first admission |
+| [[02 - Experiment 2 practical forced-admit policy benchmark|02 — Practical forced-admit policy benchmark]] | 2026-08-25 | Conditionally valid negative result | Do not implement the seven history-only policies live; audit information available at first admission |\n| [[03 - Experiment 3 first-admission information audit|03 — First-admission information audit]] | 2026-08-25 | Valid offline diagnostic | Kill exact-key history as primary signal; test request-bundle coherence and source context |
 
 ## Source corpus
 
