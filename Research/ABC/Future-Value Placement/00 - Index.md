@@ -22,9 +22,10 @@ The equal-capacity placement opportunity is now validated in both pressure regim
 - Exact-key history is unavailable for 100% of valuable C32 arrivals and 91.83% of valuable C64 arrivals. Generic LRU/ARC/frequency/reuse-distance policies therefore learn too late.
 - Demand is request/prefix structured: the dominant originating request supplies 83.69% of C32 and 86.03% of C64 target keys.
 - No practical policy tested so far beats recorded placement. Whole-bundle LRU gives a tiny C64 improvement over blockwise bundle LRU but remains 38 net misses worse than recorded.
-- Prompt-size value bands reproduce descriptively across pressure regimes, but the frozen C32 hard-priority policy fails badly on C64. Prompt size can only be a soft feature, not a binary admission rule.
+- Prompt-size value bands reproduce descriptively across pressure regimes, but the frozen C32 hard-priority policy fails badly on C64.
+- Experiment 7's soft static ranker also fails the held-out capacity-weighted gate: C32→C64 request-context AUC is 0.674, yet byte-weighted AUC is 0.472 and top-25%-byte future-reference lift is only 0.788×. The reverse direction is positive, proving the signal is pressure-dependent rather than absent.
 
-The next research step is a held-out **request/prefix expected-value ranking** experiment, not another block predictor or hard threshold.
+The next research step is an **age-conditioned bundle reuse-hazard** experiment. Static prompt/request/bundle context should not enter cache replay or live code.
 
 ## Experiment registry
 
@@ -36,6 +37,7 @@ The next research step is a held-out **request/prefix expected-value ranking** e
 | [[04 - Experiment 4 contextual request-bundle placement|04 — Contextual request-bundle placement]] | 2026-08-25 | Conditionally valid negative result | Reject tested C32 context rules; block hits and gross avoided reads conceal substitution |
 | [[05 - Experiment 5 whole-bundle eviction diagnostic|05 — Whole-bundle eviction diagnostic]] | 2026-08-25 | Valid negative result | Whole-source-request FIFO/LRU granularity alone is insufficient |
 | [[06 - Experiment 6 C64 independent pressure validation|06 — C64 independent pressure validation]] | 2026-08-25 | Valid trace; conditional policy replay | Opportunity and structure replicate; frozen practical rules fail held-out |
+| [[07 - Experiment 7 held-out soft bundle-value ranking|07 — Held-out soft bundle-value ranking]] | 2026-08-25 | Valid negative result | Static context predicts some reused bundles but fails byte-weighted C32→C64 value ranking; do not replay live |
 
 ## Accepted corpora
 
@@ -65,15 +67,13 @@ Initial offline tools selected the last resolved connector lookup. C64 exposed 3
 
 ## Next experiment
 
-Construct a bundle-level value-ranking dataset across C32 and C64.
+Fit an age-conditioned bundle reuse hazard, frozen across C32 and C64.
 
-- Predict future complete-target contribution, time to reuse, reuse count, and reload cost.
-- Use prompt size, source reuse, bundle size, prefix structure, age, and pressure as soft features.
-- Train/calibrate on one execution and validate ranking and placement on the other.
-- Blend expected value per byte with recency and a complete-target constraint.
-- Require fewer net incomplete requests than recorded placement and LRU before live implementation.
-
-If available features do not show held-out lift, add stable session/conversation/user identity plus agent tool/DAG events before continuing.
+- Estimate conditional reuse probability at actual cache-pressure ages, not only once at bundle completion.
+- Compare aggregate age, prompt/request-conditioned age, and age plus prefix/value-density corrections.
+- Evaluate pairwise arrival-versus-victim ranking and cost-weighted regret before cache replay.
+- Require positive byte-weighted lift in both C32→C64 and C64→C32 directions.
+- If hazard also fails, add stable session/conversation/turn/tool/DAG and routing identity to the trace rather than increasing model complexity.
 
 ## Related evidence
 
