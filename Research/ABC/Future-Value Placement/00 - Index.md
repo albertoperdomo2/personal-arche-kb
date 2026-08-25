@@ -25,8 +25,9 @@ The equal-capacity placement opportunity is now validated in both pressure regim
 - Prompt-size value bands reproduce descriptively across pressure regimes, but the frozen C32 hard-priority policy fails badly on C64.
 - Experiment 7's soft static ranker fails the held-out capacity-weighted gate: C32→C64 request-context AUC is 0.674, yet byte-weighted AUC is 0.472 and top-25%-byte future-reference lift is only 0.788×.
 - Experiment 8's age-, prompt-, request-, and coarse-prefix-conditioned hazards also fail. C32→C64 request+prefix hazard recovers 54.30% of 30-second oracle utility versus 68.52% for always admit; C64→C32 it collapses to always admit and recovers 0.58% versus 99.47% for keeping the victim.
+- Experiment 9 finds exact, complete AgentX-to-vLLM identity joins and abundant repeated conversations. Structural lineage alone still ranks below random by bytes, but combined bundle+lineage context crosses the held-out gate weakly: byte-weighted AUC 0.548/0.567 and top-25%-capacity value lift 1.049×/1.320×. Same-corpus trace identity provides only a 1.15–1.37× upper bound.
 
-The next research step is an **instrumentation and data-sufficiency experiment** for stable session, turn, workflow/tool, application, and routing identity. Do not add another model to the current feature set.
+The next research step is a **lineage-conditioned, horizon- and victim-aware offline utility gate**. Do not implement a live policy from the weak aggregate-ranking result.
 
 ## Experiment registry
 
@@ -40,6 +41,7 @@ The next research step is an **instrumentation and data-sufficiency experiment**
 | [[06 - Experiment 6 C64 independent pressure validation|06 — C64 independent pressure validation]] | 2026-08-25 | Valid trace; conditional policy replay | Opportunity and structure replicate; frozen practical rules fail held-out |
 | [[07 - Experiment 7 held-out soft bundle-value ranking|07 — Held-out soft bundle-value ranking]] | 2026-08-25 | Valid negative result | Static context predicts some reused bundles but fails byte-weighted C32→C64 value ranking; do not replay live |
 | [[08 - Experiment 8 held-out age-conditioned reuse hazard|08 — Held-out age-conditioned reuse hazard]] | 2026-08-25 | Valid negative result | Age and coarse prefix context collapse to pressure-specific global actions; instrument activity identity next |
+| [[09 - Experiment 9 AgentX identity coverage and held-out lineage information|09 — AgentX identity coverage and held-out lineage information]] | 2026-08-25 | Valid positive-but-weak information result | Exact lineage is available offline; require deadline/victim-aware net utility before policy replay |
 
 ## Accepted corpora
 
@@ -69,13 +71,14 @@ Initial offline tools selected the last resolved connector lookup. C64 exposed 3
 
 ## Next experiment
 
-Run an instrumentation and data-sufficiency experiment before another policy.
+Run one more offline discriminating experiment before cache replay.
 
-- Inspect AgentX/Weka records for stable conversation/session, turn, parent, tool/DAG, application, and routing identity.
-- Propagate privacy-safe structural fields into the oracle trace and require complete lifecycle/identity coverage.
-- Repeat the held-out, horizon-discounted arrival-versus-victim information gate.
-- Require positive utility lift over the stronger simple action across at least two runs per pressure condition before cache replay.
-- If activity identity fails, stop predictor complexity and investigate route-to-data, explicit application cache intent, or deterministic placement controls.
+- Add the exact joined lineage features to Experiment 8's age- and deadline-conditioned arrival-versus-LRU-victim comparison.
+- Freeze the policy bidirectionally between C32 and C64; do not use raw trace ID as a generalizable feature.
+- Measure horizon-discounted substitution utility, candidate/victim decisions, complete-request impact, and avoided native service.
+- Require improvement over the stronger simple action at the same horizon in both directions. Aggregate AUC alone is insufficient.
+- If the gate fails, stop predictor elaboration on the current fields and investigate explicit application intent, tool/suspension events, route-to-data, or deterministic session placement.
+- Before any live policy, propagate only the minimal privacy-safe structural fields required by the successful offline ablation into the request context and oracle trace.
 
 ## Related evidence
 
