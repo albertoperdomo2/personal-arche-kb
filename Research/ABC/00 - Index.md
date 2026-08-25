@@ -10,6 +10,7 @@ status: "active"
 
 ## Research reset — 2026-08-21
 
+- [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — C32 oracle trace accepted (2.24M events, zero validator errors); C64 object is present but awaits source-side trace certification because MLflow cannot stream the 6.96 GB artifact.
 - [[2026-08-23 - ABC prefetch research brief for feedback|ABC KV-cache prefetching — short research brief for feedback]] — shareable one-page-style summary of the tested strategies, decisive metrics, negative results, and feedback questions.
 - [[2026-08-21 - Independent research audit and redirection for speculative KV prefetching|Independent research audit and redirection for speculative KV prefetching]] — **broad opportunity remains, but the current V7 primary path is killed.** The next gate is a perfect-residency oracle, followed by deadline-aware working-set/data-readiness research; do not continue V7 heuristic tuning.
 
@@ -114,7 +115,20 @@ The manager-local `prefetch_complete_at_first_lookup=754` is not the authoritati
 
 Performance was mixed and below the gate: request throughput +0.16%, mean TTFT -1.87%, p95 TTFT +1.11%, and p99 TTFT +6.51%. Do not increase N: no working set hit the 8,192-chunk ceiling. The next blocker is source readiness, owner reach, and deadline-complete coverage, plus trustworthy eviction accounting.
 
+
+## COSTAR Experiment 0 corpus checkpoint — 2026-08-25
+
+[[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|The initial COSTAR oracle-corpus batch]] used stock-reactive vLLM with one immutable image across AgentX/Weka C32 and C64 cells. C32 passed the complete automated validator: 2,241,218 events, 901 closed request lifecycles, exact transfer joins, no sequence or capacity errors, and reconstructed CPU occupancy reaching exactly 131,072 blocks. Its median/p95 HTTP-admission-to-first-lookup horizon was only 7.48/25.15 ms while the mean complete working set was about 7.93 GiB. This strengthens the case for an earlier completion-oriented oracle and contradicts the idea that admission-time selection normally provides enough time to stage complete requests.
+
+The C64 benchmark is operationally clean and the manually recovered 6.96 GB object is visible in MLflow, but the proxy returns 504 before streaming it. Treat C64 as a valid pressure-run and only a conditionally accepted corpus until the original file passes source-side validation and a checksum/report is uploaded.
+
+Next: normalize C32, reproduce native ready/deferred and timing outcomes, certify C64, add chunked/compressed trace artifacts, then run the physically constrained clairvoyant oracle. This batch does not establish prefetch benefit.
+
 ## MLflow run registry
+
+
+- COSTAR Experiment 0 C32 oracle corpus (validator accepted): [f0ea8db6be2044d9a3affbaffbbb87a0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f0ea8db6be2044d9a3affbaffbbb87a0?workspace=benchflow)
+- COSTAR Experiment 0 C64 pressure corpus (benchmark valid; trace certification pending): [f306ab08fb1045c3af877439b778d62e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f306ab08fb1045c3af877439b778d62e?workspace=benchflow)
 
 - No-offload reference: [c2c2e87883324898995c3ca1639db3b1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/c2c2e87883324898995c3ca1639db3b1?workspace=benchflow)
 - 256 GiB CPU-offload control: [5f57165d7d464cee8514645215c526c7](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/5f57165d7d464cee8514645215c526c7?workspace=benchflow)
