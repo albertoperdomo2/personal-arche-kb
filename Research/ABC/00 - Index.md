@@ -11,6 +11,7 @@ status: "active"
 ## Research reset — 2026-08-21
 
 - [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — C32 oracle trace accepted (2.24M events, zero validator errors); C64 object is present but awaits source-side trace certification because MLflow cannot stream the 6.96 GB artifact.
+- [[Reports/COSTAR Offline Oracle/00 - Index|COSTAR offline oracle experiment series]] — corrected external-target replay shows only 42/901 requests reuse external KV; the finite 131,072-slot clairvoyant retention policy avoids all 12 native reads and 36.44 seconds of measured device service. Next: value-of-information baselines for practical retention admission.
 - [[2026-08-23 - ABC prefetch research brief for feedback|ABC KV-cache prefetching — short research brief for feedback]] — shareable one-page-style summary of the tested strategies, decisive metrics, negative results, and feedback questions.
 - [[2026-08-21 - Independent research audit and redirection for speculative KV prefetching|Independent research audit and redirection for speculative KV prefetching]] — **broad opportunity remains, but the current V7 primary path is killed.** The next gate is a perfect-residency oracle, followed by deadline-aware working-set/data-readiness research; do not continue V7 heuristic tuning.
 
@@ -161,6 +162,12 @@ Next: normalize C32, reproduce native ready/deferred and timing outcomes, certif
 
 - Working-set oracle control: [a34cca262119453a9837a2531c79c3de](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/a34cca262119453a9837a2531c79c3de?workspace=benchflow)
 - Working-set oracle treatment (mechanism active; negative readiness result): [39a70a1b52e241bcb48abe5338d56110](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/39a70a1b52e241bcb48abe5338d56110?workspace=benchflow)
+
+## COSTAR finite-retention checkpoint — 2026-08-25
+
+[[Reports/COSTAR Offline Oracle/04 - Finite CPU retention oracle|The finite-CPU retention oracle]] passed its movement ground-truth gate with 0/898 mismatches. The corrected target is the external matched-token segment, not total cached group counts: 157,283 references, 116,409 unique keys, and 42/901 nonzero requests. Recorded residency caused 12 native reads totaling 36.44 seconds of device service; an equal-capacity clairvoyant next-use admission policy avoided all 12 by rejecting low-future-value ordinary arrivals. This establishes retention/admission headroom, not end-to-end TTFT benefit and not a need for proactive reads.
+
+Next: measure how much of this oracle can be recovered by online signals available before eviction—reuse frequency/recency, session/category identity, and predicted next-use ranking—while preserving native fallback.
 
 ## Next experiment
 
