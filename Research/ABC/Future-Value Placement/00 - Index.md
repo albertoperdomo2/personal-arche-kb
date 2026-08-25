@@ -23,9 +23,10 @@ The equal-capacity placement opportunity is now validated in both pressure regim
 - Demand is request/prefix structured: the dominant originating request supplies 83.69% of C32 and 86.03% of C64 target keys.
 - No practical policy tested so far beats recorded placement. Whole-bundle LRU gives a tiny C64 improvement over blockwise bundle LRU but remains 38 net misses worse than recorded.
 - Prompt-size value bands reproduce descriptively across pressure regimes, but the frozen C32 hard-priority policy fails badly on C64.
-- Experiment 7's soft static ranker also fails the held-out capacity-weighted gate: C32→C64 request-context AUC is 0.674, yet byte-weighted AUC is 0.472 and top-25%-byte future-reference lift is only 0.788×. The reverse direction is positive, proving the signal is pressure-dependent rather than absent.
+- Experiment 7's soft static ranker fails the held-out capacity-weighted gate: C32→C64 request-context AUC is 0.674, yet byte-weighted AUC is 0.472 and top-25%-byte future-reference lift is only 0.788×.
+- Experiment 8's age-, prompt-, request-, and coarse-prefix-conditioned hazards also fail. C32→C64 request+prefix hazard recovers 54.30% of 30-second oracle utility versus 68.52% for always admit; C64→C32 it collapses to always admit and recovers 0.58% versus 99.47% for keeping the victim.
 
-The next research step is an **age-conditioned bundle reuse-hazard** experiment. Static prompt/request/bundle context should not enter cache replay or live code.
+The next research step is an **instrumentation and data-sufficiency experiment** for stable session, turn, workflow/tool, application, and routing identity. Do not add another model to the current feature set.
 
 ## Experiment registry
 
@@ -38,6 +39,7 @@ The next research step is an **age-conditioned bundle reuse-hazard** experiment.
 | [[05 - Experiment 5 whole-bundle eviction diagnostic|05 — Whole-bundle eviction diagnostic]] | 2026-08-25 | Valid negative result | Whole-source-request FIFO/LRU granularity alone is insufficient |
 | [[06 - Experiment 6 C64 independent pressure validation|06 — C64 independent pressure validation]] | 2026-08-25 | Valid trace; conditional policy replay | Opportunity and structure replicate; frozen practical rules fail held-out |
 | [[07 - Experiment 7 held-out soft bundle-value ranking|07 — Held-out soft bundle-value ranking]] | 2026-08-25 | Valid negative result | Static context predicts some reused bundles but fails byte-weighted C32→C64 value ranking; do not replay live |
+| [[08 - Experiment 8 held-out age-conditioned reuse hazard|08 — Held-out age-conditioned reuse hazard]] | 2026-08-25 | Valid negative result | Age and coarse prefix context collapse to pressure-specific global actions; instrument activity identity next |
 
 ## Accepted corpora
 
@@ -67,13 +69,13 @@ Initial offline tools selected the last resolved connector lookup. C64 exposed 3
 
 ## Next experiment
 
-Fit an age-conditioned bundle reuse hazard, frozen across C32 and C64.
+Run an instrumentation and data-sufficiency experiment before another policy.
 
-- Estimate conditional reuse probability at actual cache-pressure ages, not only once at bundle completion.
-- Compare aggregate age, prompt/request-conditioned age, and age plus prefix/value-density corrections.
-- Evaluate pairwise arrival-versus-victim ranking and cost-weighted regret before cache replay.
-- Require positive byte-weighted lift in both C32→C64 and C64→C32 directions.
-- If hazard also fails, add stable session/conversation/turn/tool/DAG and routing identity to the trace rather than increasing model complexity.
+- Inspect AgentX/Weka records for stable conversation/session, turn, parent, tool/DAG, application, and routing identity.
+- Propagate privacy-safe structural fields into the oracle trace and require complete lifecycle/identity coverage.
+- Repeat the held-out, horizon-discounted arrival-versus-victim information gate.
+- Require positive utility lift over the stronger simple action across at least two runs per pressure condition before cache replay.
+- If activity identity fails, stop predictor complexity and investigate route-to-data, explicit application cache intent, or deterministic placement controls.
 
 ## Related evidence
 
