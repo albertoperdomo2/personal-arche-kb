@@ -12,19 +12,22 @@ status: "active"
 
 How much of the finite-CPU placement opportunity can a low-overhead online policy recover by valuing arriving and resident KV according to future reuse, request/prefix contribution, and reload cost?
 
-This series follows the corrected offline retention result. It treats proactive movement as a later action and begins by separating victim-selection value from the ability to reject mirrored arrivals.
+This series follows the corrected offline retention result. It treats proactive movement as a later action and first separates future-aware victim selection, admission rejection, and the information actually available to a practical policy.
 
 ## Current conclusion
 
-[[01 - Experiment 1 matched next-use admission decomposition|Experiment 1]] finds that, under the matched common-arrival C32 replay, **future-aware victim selection alone is sufficient to recover the complete measured movement result**. Forced-admit and bypass-capable next-use policies both make all 42 nonempty external targets CPU-complete and avoid all 12 native reads / 36.440 seconds of measured device service.
+[[01 - Experiment 1 matched next-use admission decomposition|Experiment 1]] shows that, under the matched common-arrival C32 replay, clairvoyant future-aware victim selection alone recovers the complete measured movement result. Forced-admit and bypass-capable next-use policies both make all 42 nonempty external targets CPU-complete and avoid all 12 native reads / 36.440 seconds. Bypass changes churn, not the measured movement outcome: it cuts admission-plus-eviction churn by 58.8%.
 
-Bypass adds no movement or request-completeness benefit over forced admission in this experiment. It does reduce evictions by 75.0%, admissions by 48.3%, and total admission-plus-eviction churn by 58.8%. The earlier claim that rejection was required for the 12-read result is therefore corrected: rejection explains churn reduction, while victim selection explains the measured movement result under this replay.
+[[02 - Experiment 2 practical forced-admit policy benchmark|Experiment 2]] finds that seven practical exact-key history policies fail to recover that oracle opportunity. None beats recorded placement's 30/42 complete external requests. LRU and FIFO are least harmful at 27/42 but each creates three net additional incomplete requests; LRFU has the best practical block-hit rate at 67.53% but still creates four net additional misses. This demonstrates that block-hit ratio is not the correct placement objective and strongly suggests that exact-key history becomes informative too late for many first-reuse decisions.
+
+The program remains viable as **future-value, request/prefix-aware placement research**, but generic LRU/ARC/frequency/reuse-distance replacement is not the next live implementation.
 
 ## Experiment registry
 
 | Experiment | Date | Status | Decision |
 |---|---|---|---|
-| [[01 - Experiment 1 matched next-use admission decomposition|01 — Matched next-use admission decomposition]] | 2026-08-25 | Conditionally valid diagnostic | Prioritize practical future-value victim policies; retain bypass as a churn optimization |
+| [[01 - Experiment 1 matched next-use admission decomposition|01 — Matched next-use admission decomposition]] | 2026-08-25 | Conditionally valid diagnostic | Practical future-value victim ranking is the main opportunity; bypass remains a churn optimization |
+| [[02 - Experiment 2 practical forced-admit policy benchmark|02 — Practical forced-admit policy benchmark]] | 2026-08-25 | Conditionally valid negative result | Do not implement the seven history-only policies live; audit information available at first admission |
 
 ## Source corpus
 
@@ -37,7 +40,9 @@ Bypass adds no movement or request-completeness benefit over forced admission in
 
 ## Next experiment
 
-Benchmark practical forced-admit victim policies at exact capacity before adding richer admission machinery. Begin with LRU, ARC, aged LFU/LRFU, 2Q/LIRS-style reuse-distance policies, and the ATC'25 workload-aware KV baseline. Evaluate request completeness, native-read/service avoidance, churn, metadata, and runtime cost. Add explicit admission filters as a second axis because Experiment 1 shows their unique measured contribution is churn rather than read avoidance on C32.
+Run an offline first-admission information audit. Label which arrivals contribute to future complete requests and measure whether request identity, prefix position, prompt/decode origin, neighboring-prefix state, session/category context, queue position, time-to-demand, and reload cost are available early enough to rank them.
+
+The goal is not to train a complex model immediately. It is to determine whether simple request/prefix-aware signals contain enough information to bridge the gap between recorded placement (30/42 complete) and clairvoyant placement (42/42), and exactly which missing trace fields must be instrumented before the next live policy.
 
 ## Related evidence
 
