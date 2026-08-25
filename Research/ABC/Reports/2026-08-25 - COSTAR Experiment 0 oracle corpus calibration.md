@@ -39,7 +39,7 @@ This batch asks whether stock-reactive vLLM can emit a sufficiently complete tra
 
 Two 30-minute AgentX/Weka cells ran with identical model, immutable image digest, TP8, 256 GiB CPU KV tier, and filesystem-backed NVMe. The only intended workload difference was concurrency 32 versus 64. Both benchmark clients completed without reported request errors or cancellation.
 
-The C32 trace is a valid oracle input: its 2,241,218 events passed the automated sequence, lifecycle, transfer-join, source-readiness, CPU-generation, occupancy, and terminal-checkpoint checks with no errors. The manually salvaged C64 trace is registered in MLflow at 6.96 GB, but MLflow's artifact proxy returns a 504 before streaming it, so its contents have not yet been independently validated.
+Both traces are valid oracle inputs. C32 contains 2,241,218 events. The manually recovered 6.959 GB C64 trace contains 13,629,779 events. Both passed sequence, lifecycle, transfer-join, source-readiness, CPU-generation, occupancy, and terminal-checkpoint checks. After correcting the offline target boundary to the first resolved lookup, native movement reconstruction has zero mismatches in both corpora.
 
 Most importantly, C32 shows that HTTP admission normally offers only milliseconds of lead time while request working sets are several GiB. It also confirms that the CPU tier reaches full physical capacity. Those observations motivate a physically constrained offline oracle and weaken any expectation that a simple admission-time prefetch can stage complete requests.
 
@@ -47,14 +47,14 @@ Most importantly, C32 shows that HTTP admission normally offers only millisecond
 
 - **C32 corpus: valid and accepted for normalization/replay work.**
 - **C64 benchmark: valid as a pressure-regime workload result.**
-- **C64 corpus: conditionally accepted pending a source-side validator report and checksum.**
+- **C64 corpus: valid and accepted.** Exact size 6,959,277,072 bytes; SHA-256 `1167b512741bb97d2b76744cb238ede58fa0c6c2ef35ad7b3e9892c05b4ece3d`; 13,629,779 normalized events; zero native replay inconsistencies.
 - **C32 versus C64 is not a prefetch A/B.** Their latency difference must not be interpreted as an instrumentation treatment effect.
 - This is an initial corpus batch, not the complete Experiment 0 freeze. Replication, native-reactive replay acceptance, normalized tables, and a controlled source-prepopulation variant remain outstanding.
 
 ## Main takeaways
 
 - **Measured:** both runs used exact image digest `sha256:0e7970…e17f`, trace schema 1, stock reactive behavior, default `max-num-seqs`, and the intended CPU/NVMe hierarchy.
-- **Measured:** C32 passed the trace validator with 2,241,218 events and zero invariant errors.
+- **Measured:** C32 passed with 2,241,218 events and C64 passed with 13,629,779 events; both have zero lifecycle, transfer, capacity, or native-movement replay errors.
 - **Measured:** C32 admission-to-first-connector-lookup lead time was 7.48 ms median and 25.15 ms p95; its exact first-lookup working-set snapshot averaged 4,012.81 chunks, approximately 7.84 GiB.
 - **Measured:** reconstructed CPU occupancy reached exactly 131,072/131,072 blocks and never exceeded capacity.
 - **Measured:** C64 created much greater pressure: mean effective concurrency was 29.59 versus 9.87, mean TTFT was 8.89 s versus 1.12 s, and mean ITL was 57.73 ms versus 27.66 ms.
@@ -67,7 +67,7 @@ Most importantly, C32 shows that HTTP admission normally offers only millisecond
 | Cell | Run | Concurrency | Measured completions | Request throughput | Mean / p95 TTFT | Mean request latency | Mean ITL | Trace disposition |
 |---|---|---:|---:|---:|---:|---:|---:|---|
 | Lower pressure | [f0ea8db6be2044d9a3affbaffbbb87a0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f0ea8db6be2044d9a3affbaffbbb87a0?workspace=benchflow) | 32 | 860 | 0.4674 req/s | 1.121 / 4.310 s | 21.112 s | 27.658 ms | **Valid:** 1.635 GB, 2,241,218 events, validator passed |
-| Higher pressure | [f306ab08fb1045c3af877439b778d62e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f306ab08fb1045c3af877439b778d62e?workspace=benchflow) | 64 | 1,196 | 0.6500 req/s | 8.885 / 26.207 s | 45.522 s | 57.727 ms | **Pending certification:** 6.959 GB object is present; MLflow download returns 504 |
+| Higher pressure | [f306ab08fb1045c3af877439b778d62e](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f306ab08fb1045c3af877439b778d62e?workspace=benchflow) | 64 | 1,196 | 0.6500 req/s | 8.885 / 26.207 s | 45.522 s | 57.727 ms | **Valid:** 6.959 GB, 13,629,779 events, validator and native replay passed |
 
 AIPerf reported no errors and `was_cancelled=false` in both measured profiles. The C32 server trace contains 901 complete request lifecycles rather than 860 because it also covers readiness or warm-up traffic outside AIPerf's measured set.
 
@@ -144,11 +144,13 @@ Observed tier-I/O service time was 148.14 ms mean, 88.96 ms median, 301.23 ms p9
 
 The traced C32 aggregate is close to two earlier RHOAI 3.5 C32 controls using the same AgentX seed and workload family: request throughput approximately 0.35% lower, mean TTFT 0.54% higher, p95 TTFT 0.28% lower, and mean ITL 2.1% higher. This supports, but does not fully prove, low perturbation because the controls were separate deployments rather than a same-node crossover. C64 needs a contemporary trace-disabled sibling before its timing perturbation can be bounded confidently.
 
-## C64 artifact failure evidence
+## C64 certification update
 
-The manually uploaded leaf exists under the expected runtime-artifact path and MLflow reports exactly 6,959,277,072 bytes. The model log shows the intended oracle configuration and no oracle exceptions. The benchmark profile reports 1,196 successful measured requests and no errors.
+The complete leaf was manually downloaded and matches MLflow's declared size exactly: 6,959,277,072 bytes. SHA-256 is `1167b512741bb97d2b76744cb238ede58fa0c6c2ef35ad7b3e9892c05b4ece3d`.
 
-However, MLflow's downloader failed after approximately eight minutes, direct proxy retrieval returned `504 Gateway Time-out`, and a byte-range request was not honored. Object presence is therefore not treated as trace correctness. Validate the original file where locally accessible, then upload a small machine-readable validator report and SHA-256 checksum.
+Normalization produced 13,629,779 events, 1,280 closed requests, 2,480 closed transfers, and 1,564,329 CPU residency generations. Maximum and final reconstructed occupancy are exactly 131,072 blocks. The native replay is internally consistent.
+
+The operational lesson remains: ordinary single-response MLflow proxy download timed out. MLflow presigned multipart download works but was slow through this client path. Future traces should still be compressed and rotated into independently verifiable chunks.
 
 ## What this establishes—and what it does not
 
@@ -164,20 +166,20 @@ However, MLflow's downloader failed after approximately eight minutes, direct pr
 
 1. That any live prefetch policy improves TTFT or throughput.
 2. That perfect future knowledge has sufficient physical value.
-3. That C64 trace contents are valid merely because the object is listed.
+3. That C64's higher pressure or trace validity proves any practical placement policy improves end-to-end performance.
 4. That C32 and C64 outcome differences are caused by tracing.
 5. That raw events already reproduce native ready/deferred timing accurately enough for a clairvoyant counterfactual.
 
 ## Conclusion
 
-Experiment 0 has passed its first engineering gate: C32 is trustworthy enough to begin normalization and native-reactive replay reconstruction. The evidence sharpens the research problem. Admission-time block selection is unlikely to hide complete NVMe movement because the horizon is normally tens of milliseconds while the target is several GiB and CPU is full.
+Experiment 0 has passed its corpus gate: both C32 and C64 are normalized, capacity-consistent, and trustworthy enough for offline placement reconstruction. The evidence sharpens the research problem. Admission-time block selection is unlikely to hide complete NVMe movement because the horizon is normally tens of milliseconds while the target is several GiB and CPU is full.
 
 This does **not** say prefetching is a dead end. It says the defensible remaining version is harder and earlier: reveal a future request early enough, move the deadline-feasible portion of its complete working set, and jointly decide which CPU state may be displaced. The offline oracle must now determine whether even perfect information creates enough benefit to justify building that mechanism.
 
 ## Next steps
 
-1. Validate the original C64 file and upload the validator JSON plus SHA-256 checksum.
-2. Normalize accepted traces into chunked/compressed Parquet or Arrow tables with explicit request, key, source, transfer, and CPU-generation joins.
+1. Preserve the accepted C64 checksum and validator result with the corpus record.
+2. Convert future traces into chunked/compressed Parquet or Arrow tables with explicit request, key, source, transfer, and CPU-generation joins.
 3. Implement native-reactive replay acceptance: reproduce ready/deferred outcomes exactly and fit transfer/ready timing within a predeclared error envelope.
 4. Add compressed/rotated trace output or collection so every segment can be downloaded and validated independently.
 5. Collect at least one repeat per pressure cell and one controlled source-prepopulation variant before freezing the corpus.
@@ -185,3 +187,9 @@ This does **not** say prefetching is a dead end. It says the defensible remainin
 ## Post-publication semantic correction — 2026-08-25
 
 Offline target reconstruction found that `matched_key_counts` records the total cached prefix, including GPU-local chunks; it is not the external CPU target. The authoritative external segment is derived from `matched_tokens` and each group's chunk size. Corrected analysis finds 157,283 external references, 116,409 unique external keys, and only 42/901 requests with nonzero external reuse. See [[Reports/COSTAR Offline Oracle/04 - Finite CPU retention oracle|finite-CPU retention oracle]].
+
+## Post-publication C64 certification and target-boundary correction — 2026-08-25
+
+The C64 trace is now accepted. The complete 6,959,277,072-byte object has SHA-256 `1167b512741bb97d2b76744cb238ede58fa0c6c2ef35ad7b3e9892c05b4ece3d`, normalizes to 13,629,779 events, and passes lifecycle, transfer, capacity, and native movement reconstruction.
+
+C64 exposed a target-selection bug in the offline tools: the last resolved connector lookup may belong to a later decode-era working-set version. Initial TTFT/placement analysis must use the first resolved lookup. After applying that correction consistently, C32 remains at 0/898 movement mismatches and C64 reaches 0/1,263. See [[../Future-Value Placement/06 - Experiment 6 C64 independent pressure validation|Experiment 6]].
