@@ -35,7 +35,7 @@ The complete 2,241,218-event trace was streamed into a 2.3 GB normalized SQLite 
 | Transfer jobs / incomplete jobs | 1,435 / 0 |
 | Peak / configured CPU occupancy | 131,072 / 131,072 chunks |
 | Authoritative first-lookup working set | 4,012.81 chunks mean |
-| Final matched external set | 3,604.08 chunks mean |
+| Authoritative external contribution | 174.56 chunks mean; p50/p95 0; max 7,311 |
 | Admission→first lookup | 7.48 ms p50; 25.15 ms p95 |
 | First lookup→ready | 16.59 ms p50; 976.51 ms p95 |
 
@@ -49,7 +49,7 @@ The admission window is normally milliseconds, while first-demand recovery has a
 
 ## Interpretation and decision
 
-This gate establishes trace fidelity, not prefetch benefit. It licenses offline counterfactual work on C32. It also corrects the earlier approximately 4,062-chunk summary: 4,012.81 is the exact working-set snapshot referenced by each request's first connector lookup; the larger value came from a later/max snapshot.
+This gate establishes trace fidelity, not prefetch benefit. It licenses offline counterfactual work on C32. It also corrects two earlier summaries. First, 4,012.81 is the exact complete working-set snapshot referenced by each request's first connector lookup; the approximately 4,062 value came from a later/max snapshot. Second, total cached group counts include GPU-local chunks and must not be called external demand. The authoritative external contribution is derived from matched tokens: only 42/901 requests have a nonzero external target.
 
 Source run: [f0ea8db6be2044d9a3affbaffbbb87a0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f0ea8db6be2044d9a3affbaffbbb87a0?workspace=benchflow). See also [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|the full corpus report]].
 
