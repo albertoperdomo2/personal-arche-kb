@@ -55,7 +55,7 @@ Most importantly, C32 shows that HTTP admission normally offers only millisecond
 
 - **Measured:** both runs used exact image digest `sha256:0e7970…e17f`, trace schema 1, stock reactive behavior, default `max-num-seqs`, and the intended CPU/NVMe hierarchy.
 - **Measured:** C32 passed the trace validator with 2,241,218 events and zero invariant errors.
-- **Measured:** C32 admission-to-first-connector-lookup lead time was 7.48 ms median and 25.15 ms p95; its complete working-set snapshot averaged 4,062 chunks, approximately 7.93 GiB.
+- **Measured:** C32 admission-to-first-connector-lookup lead time was 7.48 ms median and 25.15 ms p95; its exact first-lookup working-set snapshot averaged 4,012.81 chunks, approximately 7.84 GiB.
 - **Measured:** reconstructed CPU occupancy reached exactly 131,072/131,072 blocks and never exceeded capacity.
 - **Measured:** C64 created much greater pressure: mean effective concurrency was 29.59 versus 9.87, mean TTFT was 8.89 s versus 1.12 s, and mean ITL was 57.73 ms versus 27.66 ms.
 - **Inference:** admission is ordinarily far too late to stage a complete multi-GiB request from NVMe; useful future information probably needs to arrive before HTTP admission or the oracle must select only deadline-feasible request completions.
@@ -118,12 +118,12 @@ Figure 3 compares observable C32 timing boundaries. Values are native request qu
 {"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 3 — C32 request-boundary timing","width":680,"height":300,"data":{"values":[{"boundary":"Admission→first lookup p50","latency_ms":7.483},{"boundary":"Admission→first lookup p95","latency_ms":25.145},{"boundary":"First lookup→ready p50","latency_ms":16.593},{"boundary":"First lookup→ready p95","latency_ms":976.513}]},"mark":{"type":"bar"},"encoding":{"x":{"field":"boundary","type":"nominal","title":"Request lifecycle boundary","sort":["Admission→first lookup p50","Admission→first lookup p95","First lookup→ready p50","First lookup→ready p95"],"axis":{"labelAngle":-20}},"y":{"field":"latency_ms","type":"quantitative","title":"Elapsed time (ms)","scale":{"zero":true}},"color":{"field":"boundary","type":"nominal","title":"Boundary / quantile","scale":{"scheme":"category10"}},"tooltip":[{"field":"boundary","type":"nominal","title":"Boundary"},{"field":"latency_ms","type":"quantitative","title":"Latency (ms)","format":".3f"}]}}
 ~~~
 
-Source: direct reconstruction from the validated C32 JSONL. The admission window is normally only a few milliseconds. This is physically incompatible with moving an average 7–8 GiB working set from NVMe before first lookup. The next question is not “can we select the right blocks at admission?” but “with perfect future knowledge sufficiently early, which complete requests could the real hierarchy make ready?”
+Source: direct reconstruction from the validated C32 JSONL. The admission window is normally only a few milliseconds. This is physically incompatible with moving an average 7–8 GiB working set from NVMe before first lookup. The next question is not “can we select the right blocks at admission?” but “which native CPU arrivals should be retained so the relatively rare, large external-reuse requests avoid movement?”
 
 C32 working-set and lookup facts:
 
-- Complete ordered working-set snapshot: mean 4,062 chunks / 7.93 GiB; median 3,958 chunks / 7.73 GiB; p95 6,859 chunks / 13.40 GiB.
-- Final connector-matched external set: mean 3,604 chunks; 899/901 requests matched at least one external chunk.
+- Complete ordered first-lookup working-set snapshot: mean 4,012.81 chunks / 7.84 GiB; median 3,900 chunks / 7.62 GiB; p95 6,819 chunks / 13.32 GiB.
+- Authoritative external contribution: mean 174.56 chunks across all requests; median/p95 0; maximum 7,311; only 42/901 requests matched any external tokens. The earlier 3,604 figure incorrectly summed total cached group counts, which include GPU-local chunks.
 - First lookup attempt: 891 deferred, 10 resolved immediately.
 - All 901 requests eventually resolved and emitted `REQUEST_READY`.
 - CPU reached its 131,072-block ceiling, proving a finite-CPU oracle needs explicit victim accounting.
@@ -181,4 +181,7 @@ This does **not** say prefetching is a dead end. It says the defensible remainin
 3. Implement native-reactive replay acceptance: reproduce ready/deferred outcomes exactly and fit transfer/ready timing within a predeclared error envelope.
 4. Add compressed/rotated trace output or collection so every segment can be downloaded and validated independently.
 5. Collect at least one repeat per pressure cell and one controlled source-prepopulation variant before freezing the corpus.
-6. Then run the physically constrained clairvoyant oracle. Do not implement another online heuristic before the oracle quantifies preventable stall.
+6. Continue with the physically constrained retention oracle recorded in [[Reports/COSTAR Offline Oracle/00 - Index|the COSTAR offline oracle series]]. Do not implement another online heuristic before the oracle quantifies avoided native movement.
+## Post-publication semantic correction — 2026-08-25
+
+Offline target reconstruction found that `matched_key_counts` records the total cached prefix, including GPU-local chunks; it is not the external CPU target. The authoritative external segment is derived from `matched_tokens` and each group's chunk size. Corrected analysis finds 157,283 external references, 116,409 unique external keys, and only 42/901 requests with nonzero external reuse. See [[Reports/COSTAR Offline Oracle/04 - Finite CPU retention oracle|finite-CPU retention oracle]].
