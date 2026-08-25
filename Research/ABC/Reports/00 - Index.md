@@ -27,6 +27,8 @@ Executed experiments and their evidence live here. Failed and inconclusive runs 
 
 - [[Reports/2026-08-23 - Working-set oracle AgentX first comparison|2026-08-23 — Working-set oracle AgentX first comparison]] — mechanism active but the intended oracle condition failed: only 20/2,638 intents were fully ready at first lookup; performance was mixed and near-neutral.
 
+- [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|2026-08-25 — COSTAR Experiment 0 AgentX oracle-corpus calibration]] — conditionally valid: the C32 trace passed 2.24M-event lifecycle, transfer, source, and CPU-capacity validation; the manually salvaged 6.96 GB C64 trace is present but awaits source-side certification because MLflow proxy retrieval times out.
+
 ## Detailed evidence appendices
 
 The 2026-08-10, 2026-08-17, and both AgentX Weka report directories contain native-cadence mechanism, scheduler, latency, storage, transfer, and saturation appendices linked from their parent reports.
