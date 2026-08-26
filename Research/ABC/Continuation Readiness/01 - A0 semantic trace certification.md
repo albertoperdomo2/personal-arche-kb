@@ -267,7 +267,7 @@ PYTHONPATH=. /Users/aperdomo/workspace/redhat/vllm/.venv/bin/python \
   /private/tmp/abc-oracle-validation-20260825/c64/profile_export.jsonl
 ```
 
-The implementation was run over both complete profile exports, then checked with Python bytecode compilation and Ruff. Ruff reported no findings.
+The implementation was run over both complete profile exports. The focused identity test passed (1/1), Python bytecode compilation succeeded, and Ruff reported no findings.
 
 ## Run registry
 
