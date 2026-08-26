@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-25
+last_updated: 2026-08-26
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -43,6 +43,8 @@ last_updated: 2026-08-25
 - **Add OTel traces to prefix-cache filter decisions (metrics-only today)** · Low · Confirmed — Add a `tracer.Start` span in `Filter` emitting decision outcome, affinity threshold, sticky/non-sticky counts, and TTFT gate result as span attributes, mirroring the disagg handler's `llm_d.epp.*` attribute scheme  <!-- fp: llm-d/llm-d-router:issue:otl-traces-prefix-cache-filter-decisions -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2539
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214
+- **Custom pod readinessGates not honored in router endpoint discovery** · Medium · Confirmed — Add a config field (e.g. on the endpoint discovery source) listing required `readinessGates` condition types; treat a missing/False condition as not-ready. No code matches for `readinessGates` anywhere in the repo — capability is genuinely absent.  <!-- fp: llm-d/llm-d-router:issue:custom-pod-readinessgates-endpoint-discovery -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2541
 
 ## Bugs
 
@@ -88,11 +90,11 @@ last_updated: 2026-08-25
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/metrics/cardinality.go#L100-L112
 - **inflightload GaugeVec series leaked on endpoint deletion (cardinality leak; issue's value-drift claim contradicted by OnEvicted)** · Medium · Likely — Prune the series in the `EventDelete` branch of `Extract` using `DeletePartialMatch(prometheus.Labels{"endpoint_name": name})` on both vectors; add a registry-scrape regression test asserting zero series for a deleted endpoint after in-flight requests drain  <!-- fp: llm-d/llm-d-router:bug:inflightload-gaugevec-series-leaked-on-endpoint-deletion -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2529
-  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L710-L712
-  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L352
-  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L196-L205
-  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32
-  - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L41
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L710-L713
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L351-L353
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L41
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/metrics/metrics.go#L1
 - **InitTracing silently substitutes 10% sampling for unsupported sampler values and unparseable args** · Medium · Confirmed — Map each standard `OTEL_TRACES_SAMPLER` value to its SDK constructor in a `newSampler` helper, route parse and range failures through the error handler, reject ratios outside `[0,1]`; add table-driven tests asserting `sampler.Description()` per value  <!-- fp: llm-d/llm-d-router:bug:otel-sampler-fallback-silently-10pct -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2530
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/common/observability/tracing/telemetry.go#L76-L86
@@ -114,6 +116,8 @@ last_updated: 2026-08-25
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L380
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L409
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L452
+- **prefix-cache-affinity filter uses locked global math/rand on the per-request scheduling hot path** · Low · Likely — Replace `math/rand` import with `math/rand/v2` (lock-free, per-P state) as a drop-in; add a parallel benchmark confirming the exploration path no longer contends  <!-- fp: llm-d/llm-d-router:perf:prefixcacheaffinity-global-rand-lock-on-filter-hotpath -->
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L166-L180
 
 ## Features & RFCs
 
@@ -171,7 +175,23 @@ last_updated: 2026-08-25
   - **Impact:** Consistent debugging surface across the whole scheduling pipeline; per-request routing rationale visible in traces.
   - **Rough effort:** Low-Medium — interface change + implement for each filter/scorer.
   <!-- fp: llm-d/llm-d-router:feature:otlp-spans-for-all-scheduling-filter-scorer-decisions -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2539
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214
   - code: https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_headers_handler.go#L91-L96
+- **Support ORCA endpoint-load-metrics response headers for flow-control pressure** · Low · Speculative
+  - **Problem:** Upstream control planes cannot pace traffic without polling Prometheus; vLLM already supports ORCA but the EPP does not emit `endpoint-load-metrics` response headers. Exposing pool saturation / queue pressure via ORCA would close the feedback loop without requiring out-of-band scraping.
+  - **Proposed approach:** Determine where in the ext-proc response path headers can be injected (likely in the post-scheduling response mutation), map flow-control signals (pool saturation, queue depth, admission status) to ORCA `application_utilization` / `queue_length` fields, and wire them through. Requires coordination with upstream envoy/gRPC-proxy ORCA header propagation.
+  - **Impact:** Enables real-time traffic pacing from upstream control planes; reduces tail latency spikes from over-admission during saturation.
+  - **Rough effort:** Medium-High — ext-proc response-path discovery, ORCA field mapping, upstream propagation testing.
+  <!-- fp: llm-d/llm-d-router:issue:orca-load-metrics-response-headers -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2536
+- **Optional data-dependency consumers with no producer load silently and score 0.0 — validate at config load** · Medium · Confirmed
+  - **Problem:** `CreateMissingDataProducers` errors only when a *Required* consumed key has no producer; for *Optional* keys it logs a one-line warning and continues. Scorers/filters that declare `Optional` dependencies (e.g. `EndpointAttributeScorer`) silently load, run, and score every endpoint 0.0 when their producer is misconfigured or absent — indistinguishable from a scorer that discriminates badly. A benchmark built on such a config would report a meaningless result with no error.
+  - **Proposed approach:** Add a config-load validation pass that, for scorers/filters whose Optional dependency has no producer, emits a loud persistent signal (not a single INFO line) or fails; consider per-plugin opt-in to promote specific Optional dependencies to Required so misconfiguration is caught before the first request.
+  - **Impact:** Prevents silent routing degradation from misconfigured data-dependency graphs; makes data-graph completeness observable.
+  - **Rough effort:** Low-Medium — validation pass + optional per-plugin promotion flag.
+  <!-- fp: llm-d/llm-d-router:feature:validate-optional-data-dependency-producer-at-config-load -->
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L129-L140
+  - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L97
 
 ## Recently Resolved
