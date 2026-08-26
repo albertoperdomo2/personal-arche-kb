@@ -10,6 +10,7 @@ status: "active"
 
 ## Research reset — 2026-08-21
 
+- [[Continuation Readiness/00 - Index|COSTAR continuation-readiness research program]] — A0 certifies the existing C32/C64 traces for the continuation-retention oracle, TTL frontier, and request-readiness allocation. All 1,838 observed continuation edges are exact and ordered under `x_correlation_id`; explicit tool/lifecycle/workflow events remain absent.
 - [[Future-Value Placement/00 - Index|COSTAR future-value placement experiments]] — C32 and C64 now validate substantial equal-capacity placement headroom. Matched next-use avoids 12/12 reads on C32 and 144/212 on C64; future-aware victim ranking produces the movement result while bypass reduces churn. Practical exact-key and hard contextual policies remain negative.
 - [[Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration|COSTAR Experiment 0 — AgentX oracle-corpus calibration]] — both oracle traces are accepted: C32 has 2.24M events and C64 has 13.63M, with closed lifecycles/transfers, exact capacity conservation, checksums, and zero native-movement reconstruction mismatches.
 - [[Reports/COSTAR Offline Oracle/00 - Index|COSTAR offline oracle experiment series]] — corrected external-target replay shows only 42/901 requests reuse external KV; the finite 131,072-slot clairvoyant retention policy avoids all 12 native reads and 36.44 seconds of measured device service. Next: value-of-information baselines for practical retention admission.
