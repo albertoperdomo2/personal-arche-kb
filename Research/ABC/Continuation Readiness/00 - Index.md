@@ -14,9 +14,9 @@ How much of the measured finite-capacity CPU-placement oracle can be recovered b
 
 ## Current status
 
-**A3 complete — request-level grouping and shared-prefix marginal allocation are rejected for this workload. The unresolved problem is continuation eligibility/value, not set packing.**
+**A4 instrumentation baseline complete — accepted exports support I0–I1 only; I2–I5 require producer-side semantic capture.**
 
-A1–A3 now establish:
+A1–A3 establish:
 
 1. The previous turn's known working set almost exactly identifies next-continuation KV demand.
 2. Continuation intent contains substantial gross placement value.
@@ -25,7 +25,7 @@ A1–A3 now establish:
 5. Whole-continuation and marginal-readiness allocation never beat independent block allocation at 192/256/320 GiB.
 6. The next discriminating signal—lifecycle/tool/workflow state—is absent from the accepted traces.
 
-Live retention remains gated. The next work is an A4 semantically enriched capture and information-value ladder, not a complex vLLM allocator.
+Live retention remains gated. A4 now defines the strict capture contract and proves that existing exports cannot answer the semantic question.
 
 ## Experiment sequence
 
@@ -35,7 +35,7 @@ Live retention remains gated. The next work is an A4 semantically enriched captu
 | A1 | Continuation-retention oracle | **Complete** | Strong signal go; whole-continuation live policy rejected |
 | A2 | CPU retention TTL frontier | **Complete** | 30 s baseline-only conditional pass; no live go |
 | A3 | Request-readiness-aware allocation | **Complete** | **KILL grouping allocator**; retain readiness as metric |
-| A4 | Semantic information-value ladder | **Next; requires enriched trace for I2–I5** | Instrument lifecycle/tool/workflow state |
+| A4 | Semantic information-value ladder | **Instrumentation baseline complete** | Add producer-side I2–I5 fields, then matched c32/c64 capture |
 | A5 | Lightweight execution model | Gated | Only if A4 supports it |
 | A6 | Route-to-data versus move-to-request | Requires multi-replica corpus | Not started |
 | A7 | Tool/workflow-event prefetch feasibility | Requires semantic event timestamps | Not started |
@@ -44,6 +44,7 @@ Live retention remains gated. The next work is an A4 semantically enriched captu
 
 ## Key documents
 
+- [[Research/ABC/Continuation Readiness/05 - A4 semantic information capture audit|A4 semantic information capture audit]]
 - [[Research/ABC/Continuation Readiness/04 - A3 request-readiness allocation|A3 request-readiness allocation]]
 - [[Research/ABC/Continuation Readiness/03 - A2 bounded soft-TTL frontier|A2 bounded soft-TTL frontier]]
 - [[Research/ABC/Continuation Readiness/02 - A1 continuation-retention oracle|A1 continuation-retention oracle]]
@@ -93,26 +94,11 @@ Thirty seconds is the only tested common TTL that is never worse than LRU across
 
 Values are complete external requests. Grouping provides zero positive cells and loses under c64 pressure.
 
-## Next experiment
+## A4 baseline
 
-A4 requires a fresh matched AgentX capture with the existing KV oracle events plus:
+| Corpus | Records | I0 | I1 | I2 | I3 | I4 | I5 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| c32 | 897 | 897 | 897 | 0 | 0 | 0 | 0 |
+| c64 | 1,262 | 1,262 | 1,262 | 0 | 0 | 0 | 0 |
 
-- explicit lifecycle state;
-- tool start/end and tool class;
-- agent/workflow node;
-- candidate successor set;
-- explicit session terminal/close reason;
-- early application event timestamps;
-- stable root, continuation, turn, and request IDs.
-
-Then evaluate the incremental decision value of:
-
-- I0: ordinary key/history;
-- I1: continuation identity and elapsed time;
-- I2: lifecycle state;
-- I3: tool/agent class;
-- I4: workflow node/candidate successors;
-- I5: exact application-known successor;
-- I6: future oracle.
-
-Primary metrics remain net external miss substitution and finite-oracle service recovery. Do not train a model or implement live eviction until one added information regime materially improves decisions beyond 30-second TTL.
+I2–I5 are not measurable until lifecycle/tool/workflow fields are captured at the producer boundary and preserved in the client export.
