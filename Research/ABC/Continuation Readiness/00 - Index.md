@@ -14,16 +14,18 @@ How much of the measured finite-capacity CPU-placement oracle can be recovered b
 
 ## Current status
 
-**A2 complete — a 30-second soft TTL weakly dominates LRU across the capacity sweep, but no static TTL is safe versus recorded placement at the native 256 GiB capacity.**
+**A3 complete — request-level grouping and shared-prefix marginal allocation are rejected for this workload. The unresolved problem is continuation eligibility/value, not set packing.**
 
-A1 proved that continuation intent contains substantial oracle value. A2 shows that elapsed time alone captures only a small, pressure-sensitive fraction of it:
+A1–A3 now establish:
 
-- 30 s is neutral versus LRU on c32 and improves c64 by 6/3/10 complete requests at 192/256/320 GiB;
-- at native capacity, 30 s still has +3 c32 and +37 c64 net misses versus recorded placement;
-- long TTLs are dangerous: c64 1,800 s creates 502 net new misses;
-- the best per-trace point differs sharply: 300 s at c32 and 10 s at c64.
+1. The previous turn's known working set almost exactly identifies next-continuation KV demand.
+2. Continuation intent contains substantial gross placement value.
+3. Unconditional or long-lived retention causes harmful substitution under pressure.
+4. A 30-second soft TTL weakly dominates LRU but does not beat recorded placement at native capacity.
+5. Whole-continuation and marginal-readiness allocation never beat independent block allocation at 192/256/320 GiB.
+6. The next discriminating signal—lifecycle/tool/workflow state—is absent from the accepted traces.
 
-The next gate is A3 request-readiness-aware allocation. Thirty seconds is retained as a robust block-level baseline only; live vLLM work remains gated.
+Live retention remains gated. The next work is an A4 semantically enriched capture and information-value ladder, not a complex vLLM allocator.
 
 ## Experiment sequence
 
@@ -32,22 +34,22 @@ The next gate is A3 request-readiness-aware allocation. Thirty seconds is retain
 | A0 | Semantic trace enrichment and replay certification | **Complete** | Existing traces support A1–A3; explicit semantics absent |
 | A1 | Continuation-retention oracle | **Complete** | Strong signal go; whole-continuation live policy rejected |
 | A2 | CPU retention TTL frontier | **Complete** | 30 s baseline-only conditional pass; no live go |
-| A3 | Request-readiness-aware allocation | **Next** | Must beat 30 s on readiness and net miss substitution |
-| A4 | Semantic information-value ladder | Blocked on enriched trace for I2–I5 | I0–I1 possible now |
+| A3 | Request-readiness-aware allocation | **Complete** | **KILL grouping allocator**; retain readiness as metric |
+| A4 | Semantic information-value ladder | **Next; requires enriched trace for I2–I5** | Instrument lifecycle/tool/workflow state |
 | A5 | Lightweight execution model | Gated | Only if A4 supports it |
 | A6 | Route-to-data versus move-to-request | Requires multi-replica corpus | Not started |
 | A7 | Tool/workflow-event prefetch feasibility | Requires semantic event timestamps | Not started |
 | A8 | Combined action oracle | Gated on A6/A7 | Not started |
-| B1–B7 | Live validation program | Gated on A3 evidence | Not started |
+| B1–B7 | Live validation program | Gated on A4 evidence | Not started |
 
 ## Key documents
 
+- [[Research/ABC/Continuation Readiness/04 - A3 request-readiness allocation|A3 request-readiness allocation]]
 - [[Research/ABC/Continuation Readiness/03 - A2 bounded soft-TTL frontier|A2 bounded soft-TTL frontier]]
 - [[Research/ABC/Continuation Readiness/02 - A1 continuation-retention oracle|A1 continuation-retention oracle]]
 - [[Research/ABC/Continuation Readiness/01 - A0 semantic trace certification|A0 semantic trace certification]]
 - [[Research/ABC/Reports/2026-08-25 - COSTAR Experiment 0 oracle corpus calibration]]
-- [[Research/ABC/Reports/COSTAR Offline Oracle/04 - Finite CPU retention oracle]]
-- [[Research/ABC/Future-Value Placement/01 - Experiment 1 matched next-use admission decomposition]]
+- [[Research/ABC/Future-Value Placement/06 - Experiment 6 C64 independent pressure validation]]
 - [[Research/ABC/2026-08-21 - Independent research audit and redirection for speculative KV prefetching]]
 
 ## Accepted corpus registry
@@ -64,34 +66,53 @@ The next gate is A3 request-readiness-aware allocation. Thirty seconds is retain
 | Gross oracle service recovery | 80.42% | 61.29% | 65.44% |
 | Recorded reads avoided | 10/12 | 90/212 | 95/212 |
 | Net external miss delta | -6 | +79 | +64 |
-| Average protected CPU share | 31.44% | 49.59% | 48.13% |
-| Peak protected CPU share | 91.25% | 100% | 100% |
 
 A1 clears the information-value gate but rejects unconditional whole-continuation retention.
 
 ## A2 headline evidence at 256 GiB
 
-| Metric | c32, 30 s | c32 best request point, 300 s | c64, 30 s | c64 best request point, 10 s |
-|---|---:|---:|---:|---:|
-| Complete external targets | 27/42 | 29/42 | 540/789 | 545/789 |
-| Gross oracle service recovery | 15.42% | 21.65% | 26.13% | 23.06% |
-| Net external miss delta | +3 | +1 | +37 | +32 |
-| Protected GiB-hours | 18.04 | 88.11 | 34.24 | 16.70 |
+| Metric | c32, 30 s | c64, 30 s |
+|---|---:|---:|
+| Complete external targets | 27/42 | 540/789 |
+| Gross oracle service recovery | 15.42% | 26.13% |
+| Net external miss delta | +3 | +37 |
+| Protected GiB-hours | 18.04 | 34.24 |
 
 Thirty seconds is the only tested common TTL that is never worse than LRU across both traces and 192/256/320 GiB.
 
+## A3 headline evidence
+
+| Corpus / capacity | TTL 30 s | Independent block | Whole continuation | Marginal readiness |
+|---|---:|---:|---:|---:|
+| c32 / 192 GiB | 18 | 31 | 31 | 31 |
+| c32 / 256 GiB | 27 | 36 | 36 | 36 |
+| c32 / 320 GiB | 34 | 40 | 40 | 40 |
+| c64 / 192 GiB | 412 | **449** | 445 | 445 |
+| c64 / 256 GiB | **540** | 509 | 504 | 504 |
+| c64 / 320 GiB | **624** | 571 | 571 | 571 |
+
+Values are complete external requests. Grouping provides zero positive cells and loses under c64 pressure.
+
 ## Next experiment
 
-Implement A3 as an offline, equal-capacity, request-readiness-aware allocation comparison:
+A4 requires a fresh matched AgentX capture with the existing KV oracle events plus:
 
-- no-TTL LRU;
-- 30 s A2 TTL baseline;
-- A1 positive-only continuation oracle;
-- matched finite next-use reference;
-- independent block score;
-- whole-continuation value density;
-- prefix-frontier density;
-- marginal-readiness allocation;
-- shared-prefix incremental capacity accounting.
+- explicit lifecycle state;
+- tool start/end and tool class;
+- agent/workflow node;
+- candidate successor set;
+- explicit session terminal/close reason;
+- early application event timestamps;
+- stable root, continuation, turn, and request IDs.
 
-Primary outcome: complete external requests and net miss substitution. Gross service and key-hit rate remain diagnostics. Do not begin live retention unless A3 materially improves request readiness over 30 s without creating a new c64 regression.
+Then evaluate the incremental decision value of:
+
+- I0: ordinary key/history;
+- I1: continuation identity and elapsed time;
+- I2: lifecycle state;
+- I3: tool/agent class;
+- I4: workflow node/candidate successors;
+- I5: exact application-known successor;
+- I6: future oracle.
+
+Primary metrics remain net external miss substitution and finite-oracle service recovery. Do not train a model or implement live eviction until one added information regime materially improves decisions beyond 30-second TTL.
