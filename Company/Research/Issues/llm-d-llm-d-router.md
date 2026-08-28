@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -49,6 +49,11 @@ last_updated: 2026-08-27
   - issue: https://github.com/llm-d/llm-d-router/issues/2568
 - **Add tracing to the coordinator (underspecified)** · Medium · Confirmed — Scope before implementing: root span around `pipeline.Execute` in `handleInference` plus per-step child spans in `pkg/coordinator/steps`, reusing `pkg/common/observability/tracing`; confirm correlation with EPP `request`/`request_orchestration` spans.  <!-- fp: llm-d/llm-d-router:issue:coordinator-tracing -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2578
+- **lora-affinity scorer rests ActiveModels on in-flight activity, not GPU residency; capacity heuristic compares incommensurable quantities** · High · Confirmed — Confirm the semantic with maintainers, then take the offered narrow PR: fix the `ActiveModels` doc comment and stop treating in-flight activity as spare `max_lora` capacity (or source residency from `/v1/models`). Decide whether an "adapter cache hit/miss" counter can honestly be claimed from this signal.  <!-- fp: llm-d/llm-d-router:issue:lora-affinity-activemodels-is-inflight-activity-not-gpu-residency -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2605
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/interface/datalayer/metrics.go#L27
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255
 
 ## Bugs
 
@@ -106,6 +111,13 @@ last_updated: 2026-08-27
 - **Attributes.Clone() shares value references despite "deep copy" contract** · Low · Likely — Make `Put` clone the value (or have `Clone` call `v.Clone()` before re-`Put`) and add a test that mutating a stored value after `Clone` does not affect the clone; confirm no in-tree producer mutates a stored `Cloneable` in place. `Get` clones on read, mitigating reader aliasing.  <!-- fp: llm-d/llm-d-router:bug:attributemap-clone-is-shallow -->
   - code: https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L62
   - code: https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L92
+- **MoRI-IO parallel-dispatch prefill leg caps token limits at the top level, a no-op for the generate API whose limits live under sampling_params** · Medium · Likely — Thread `apiType` into `runNIXLProtocolV2WriteParallel` and apply the same `tokenLimitMap`-based capping (and decode restore) the serial path uses, with a NIXLv2 test asserting a generate-API prefill body carries `sampling_params.max_tokens == 1`  <!-- fp: llm-d/llm-d-router:bug:nixlv2-parallel-dispatch-prefill-token-cap-ineffective-for-generate-api -->
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/connector_nixlv2.go#L75-L79
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/connector_nixlv2.go#L531-L534
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/connector_nixlv2.go#L117
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/connector_nixlv2.go#L178-L180
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/proxy.go#L140
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/proxy.go#L145-L154
 
 ## Performance
 
@@ -129,6 +141,9 @@ last_updated: 2026-08-27
 - **InMemoryIndex.Lookup scans all request prefix blocks without early-stopping on a cache miss** · Medium · Likely — Track the longest contiguous hit run from the start and stop once a miss ends the viable prefix chain (or cap the scan at a configurable max-prefix-blocks); consider iterating `pods.cache.Range` instead of `Keys()` to avoid the per-key slice allocation. The only early exit is a found-but-empty `PodCache`; a not-found key `continue`s, so the loop runs to completion for long-context/agentic prompts.  <!-- fp: llm-d/llm-d-router:perf:kvblock-lookup-no-early-stop-on-miss -->
   - code: https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/kvcache/kvblock/in_memory.go#L109
   - code: https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/kvcache/kvblock/in_memory.go#L127
+- **Metrics extractor clones the full Metrics struct (two maps) per endpoint per scrape, then populateLoRAMetrics discards those maps and allocates two fresh ones** · Low · Confirmed — Skip cloning the two LoRA maps when LoRA metrics will be repopulated (clear in place, or leave nil in `Clone` and let `populateLoRAMetrics` allocate), so each scrape allocates each map once instead of twice  <!-- fp: llm-d/llm-d-router:perf:metrics-extractor-clone-then-discard-lora-maps-per-scrape -->
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L125
+  - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L249-L250
 
 ## Features & RFCs
 
@@ -204,5 +219,26 @@ last_updated: 2026-08-27
   <!-- fp: llm-d/llm-d-router:feature:validate-optional-data-dependency-producer-at-config-load -->
   - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L129-L140
   - code: https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L97
+- **Allow a distinct saturation plugin instance per disagg stage (prefill vs decode)** · Medium · Confirmed
+  - **Problem:** Per-stage saturation reporting (#2221) still binds all stages to one plugin instance, so operators cannot set stage-specific limits — e.g. token-based concurrency for prefill and request-based concurrency for decode, or different request-concurrency ceilings per stage. The current `hybrid` workaround (#1991) only helps when stages saturate on different dimensions.
+  - **Proposed approach:** Design the saturation config so a plugin instance can be registered per stage, then validate that admission uses the stage-appropriate instance on each leg. Confirm with flow-control owners whether hybrid mode should remain as a fallback.
+  - **Impact:** Stage-specific limits (token-based prefill concurrency, request-based decode concurrency); removes the hybrid workaround's blind spot.
+  - **Rough effort:** Medium — config design + admission validation on each leg.
+  <!-- fp: llm-d/llm-d-router:feature:per-stage-saturation-plugin-instances -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2585
+- **Coordinator support for Responses API `previous_response_id` via agentic-api (hydrate before scheduling, persist on response)** · Medium · Confirmed
+  - **Problem:** Serving `previous_response_id` currently forces affinity to whichever engine holds the prior turns; scorers never see the real prompt.
+  - **Proposed approach:** Add a pre-scheduling hydration step that inlines prior turns from agentic-api (so scorers see the real prompt for cache-aware scoring) and a response-path persist step that stores the completed turn and returns the stored response id; streamed turns are relayed and buffered for persistence at stream end. Milestoned v0.11; agentic-api side is vllm-project/agentic-api#216. Confirm the streamed-turn buffering boundary so gateway-owned tool loops stay out of scope.
+  - **Impact:** Cache-aware scoring on real prompts; no forced affinity to the prior-turn engine.
+  - **Rough effort:** Medium — coordinator pipeline hooks + agentic-api endpoint configuration.
+  <!-- fp: llm-d/llm-d-router:feature:responses-api-previous-response-id-hydration-persist -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2596
+- **RFC: SGLang P/D disaggregation where multiple DP/DEP ranks share one engine port (rank as first-class endpoint attribute)** · Medium · Confirmed
+  - **Problem:** In SGLang deployments several DP/DEP ranks sit behind one HTTP port, so the EPP must select prefill and decode ranks independently and a sidecar on both legs translates the selected rank into `routed_dp_rank`. Concrete gaps against `main` at `75d6c85`: endpoint identity (rank ≠ `basePort+N`), prefill ingress needing a rank-aware proxy, per-rank load metrics (filter shared `/metrics` by `dp_rank`), KV-event ownership (`DataParallelRank` currently dropped), and split-leg correctness/failure semantics.
+  - **Proposed approach:** Make DP rank a first-class endpoint attribute separate from pod IP/port; rank-aware prefill proxy; per-rank metrics (distinct scrapes or a rank dimension in the data layer); restore `DataParallelRank` in KV events. A working prototype with virtual ports exists; decompose into reviewable PRs after maintainers answer the 8 open design questions.
+  - **Impact:** Correct SGLang P/D disaggregation on shared-port multi-rank deployments.
+  - **Rough effort:** High — endpoint identity model, proxy, metrics, KV events, split-leg semantics.
+  <!-- fp: llm-d/llm-d-router:feature:sglang-pd-disagg-internal-dp-dep-ranks -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2598
 
 ## Recently Resolved
