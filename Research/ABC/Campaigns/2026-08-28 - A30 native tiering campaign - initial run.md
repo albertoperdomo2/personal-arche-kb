@@ -28,13 +28,31 @@ A reproducible Python client sends four phases through a temporary service port-
 3. sixteen additional unique contexts at concurrency eight (pressure);
 4. reuse after pressure.
 
-Each request disables Qwen thinking and generates one token, so the measured cost is dominated by prompt processing, scheduling, and KV movement. The pressure contexts are long enough to exercise the finite 4 GiB CPU tier. Request records, before/after Prometheus snapshots, and a 15-second metric time series are persisted on the host.
+Each request disables Qwen thinking and generates one token. The pressure contexts are long enough to exercise the finite 4 GiB CPU tier. Request records, before/after Prometheus snapshots, and a 15-second metric time series are persisted on the host.
 
-## Observed progress
+## Results
 
-The first calibration request (292 prompt tokens) completed in approximately 4.5 seconds. During the campaign, vLLM logs reported deferred requests and active CPU read/write pinning. The KV metrics reported approximately 410 MiB of GPU→CPU stores early in the run; a later snapshot reported 16 store operations totalling approximately 3.54 GiB. This confirms that the workload is exercising native offload and queue pressure rather than merely hitting GPU-resident prefixes.
+The campaign completed at `2026-08-28T22:10:49Z`. Out of 40 client requests, 15 returned HTTP 200 before the 300-second client timeout; 25 timed out. Successful request latencies ranged from 116–296 seconds (phase means: warm-up 192.1 s, reuse 192.0 s, pressure 192.0 s, reuse-after-pressure 249.4 s). The timeouts are client-side observations, not proof that vLLM abandoned the requests.
 
-The campaign was still running at the time of this note; final request-level summaries and post-run metrics will be appended after completion. No treatment or proactive prefetch claim is made here.
+Final KV metrics:
+
+| Metric | Value |
+|---|---:|
+| GPU→CPU store operations | 120 |
+| GPU→CPU store bytes | 26.64 GB |
+| deferred lookup events | 40 |
+| aggregate asynchronous lookup delay | 5,188.46 s |
+| aggregate synchronous lookup delay | 0.0149 s |
+| final CPU cache usage | 22.9% |
+| final in-flight write/read usage | 12.0% / 10.8% |
+
+The key observation is the separation between metadata and movement: synchronous lookup time was only 14.9 ms aggregate, while deferred asynchronous delay accumulated to 5,188 s. The native tier path is therefore dominated by queued/serialized KV movement and request scheduling under this pressure, not by existence probes. The workload is intentionally harsher than a normal short-request benchmark and should be treated as a stress baseline.
+
+## Interpretation and limits
+
+This is strong evidence that the deployment can enter a severe tier-movement bottleneck, but it is not yet evidence that a retention policy helps. The long-context pressure workload produced too many timeouts to support a fair throughput comparison, and the stock image has no COSTAR treatment. We should not infer that reuse failed or that proactive retention is ineffective from these results.
+
+The run does establish a useful failure envelope: with a 4 GiB CPU tier and concurrency eight, native reactive tiering can accumulate multi-thousand-second aggregate deferred delay even while synchronous lookup remains negligible.
 
 ## Reproducibility artifacts
 
@@ -43,11 +61,12 @@ The campaign was still running at the time of this note; final request-level sum
 /home/crcuser/costar-overnight-20260828-native/pod.yaml
 /home/crcuser/costar-overnight-20260828-native/metrics-before.prom
 /home/crcuser/costar-overnight-20260828-native/metrics-timeseries.prom
-/home/crcuser/costar-overnight-20260828-native/metrics-after.prom   (written at completion)
-/home/crcuser/costar-overnight-20260828-native/requests.json         (written at completion)
-/home/crcuser/costar-overnight-20260828-native/run.log
+/home/crcuser/costar-overnight-20260828-native/metrics-after.prom
+/home/crcuser/costar-overnight-20260828-native/metrics-final.prom
+/home/crcuser/costar-overnight-20260828-native/requests.json
+/home/crcuser/costar-overnight-20260828-native/vllm-logs-final.txt
 ```
 
-## Next decision
+## Next experiment
 
-Use the completed run to determine whether the pressure/reuse phases create measurable secondary reads and exposed deferred time. If they do, the next controlled comparison should keep this workload and compare a native reactive baseline against a retention/placement treatment, changing one policy variable at a time. If they do not, increase pressure only enough to produce repeatable secondary reads; do not jump directly to a large overnight run.
+Run a smaller calibrated baseline (512–1,024 prompt tokens, concurrency 2–4, no more than 8 requests per phase) so all requests complete. Then compare the same workload with one treatment variable—preferably retention/placement or the COSTAR image—while keeping model, CPU capacity, tier, and request order identical. Use completed-request rate, TTFT/total latency, deferred lookup delay, secondary read bytes/time, CPU occupancy, and timeout count as gates.
