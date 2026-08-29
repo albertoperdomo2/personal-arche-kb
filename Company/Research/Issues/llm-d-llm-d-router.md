@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -54,6 +54,7 @@ last_updated: 2026-08-28
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/interface/datalayer/metrics.go#L27
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go#L91-L92
 
 ## Bugs
 
@@ -118,6 +119,9 @@ last_updated: 2026-08-28
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/connector_nixlv2.go#L178-L180
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/proxy.go#L140
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/sidecar/proxy/proxy.go#L145-L154
+- **Endpoint subset filter splits "address:port" with LastIndexByte(':'), breaking bracketed IPv6 matches** · Medium · Speculative — Parse subset entries with `net.SplitHostPort` instead of `LastIndexByte`; add an IPv6 subset unit test; confirm the Envoy-emitted wire format to retire speculative confidence  <!-- fp: llm-d/llm-d-router:bug:subset-filter-ipv6-address-parse -->
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/candidates.go#L124-L139
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/candidates.go#L144-L154
 
 ## Performance
 
@@ -125,6 +129,9 @@ last_updated: 2026-08-28
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/scheduling/scheduler_profile.go#L173
 - **DataProducer plugins run sequentially with 400ms per-producer timeout on the request path** · Medium · Likely — Fan out independent producers concurrently with shared deadline via errgroup; preserve ordering only where `Consumes()` declares dependency  <!-- fp: llm-d/llm-d-router:perf:sequential-dataproducer-plugins-400ms-timeout -->
   - code: https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/requestcontrol/director.go#L395
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/plugin_executor.go#L37-L51
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/plugin_executor.go#L66-L85
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/director.go#L58-L62
 - **datalayer.Scope rebuilds the plugin's static allowedPut/allowedGet key sets per filter/scorer invocation per request** · Medium · Likely — Compute each plugin's `allowedPut`/`allowedGet` once at registration (or memoize on the plugin/ScopedEndpoint) and reuse the immutable maps across `Scope` calls  <!-- fp: llm-d/llm-d-router:perf:datalayer-scope-rebuilds-static-keymaps -->
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/datalayer/endpoint_scope.go#L189-L231
   - code: https://github.com/llm-d/llm-d-router/blob/800ec0e453d8b962ca0af6f03d3bfbe8e685350c/pkg/epp/scheduling/scheduler_profile.go
@@ -226,6 +233,7 @@ last_updated: 2026-08-28
   - **Rough effort:** Medium — config design + admission validation on each leg.
   <!-- fp: llm-d/llm-d-router:feature:per-stage-saturation-plugin-instances -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2585
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/controller/config.go
 - **Coordinator support for Responses API `previous_response_id` via agentic-api (hydrate before scheduling, persist on response)** · Medium · Confirmed
   - **Problem:** Serving `previous_response_id` currently forces affinity to whichever engine holds the prior turns; scorers never see the real prompt.
   - **Proposed approach:** Add a pre-scheduling hydration step that inlines prior turns from agentic-api (so scorers see the real prompt for cache-aware scoring) and a response-path persist step that stores the completed turn and returns the stored response id; streamed turns are relayed and buffered for persistence at stream end. Milestoned v0.11; agentic-api side is vllm-project/agentic-api#216. Confirm the streamed-turn buffering boundary so gateway-owned tool loops stay out of scope.
@@ -240,5 +248,12 @@ last_updated: 2026-08-28
   - **Rough effort:** High — endpoint identity model, proxy, metrics, KV events, split-leg semantics.
   <!-- fp: llm-d/llm-d-router:feature:sglang-pd-disagg-internal-dp-dep-ranks -->
   - issue: https://github.com/llm-d/llm-d-router/issues/2598
+- **Support OTLP/HTTP as an alternative to the gRPC tracing exporter** · Low · Confirmed
+  - **Problem:** The tracing exporter is gRPC-only today; OTLP/HTTP is a common egress shape in restricted/meshed networks where gRPC egress is blocked or load-balanced awkwardly.
+  - **Proposed approach:** Add an exporter-protocol config option (grpc|http) reusing the existing OTel exporter wiring, with a test asserting both protocols build and ship a span; coordinate with #2578.
+  - **Impact:** Broadens deployability with low risk.
+  - **Rough effort:** Low — config option + protocol wiring + test.
+  <!-- fp: llm-d/llm-d-router:feature:otlp-http-tracing-exporter -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2567
 
 ## Recently Resolved
