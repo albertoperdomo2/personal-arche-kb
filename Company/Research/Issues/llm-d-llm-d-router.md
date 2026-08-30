@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-29
+last_updated: 2026-08-30
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -122,6 +122,13 @@ last_updated: 2026-08-29
 - **Endpoint subset filter splits "address:port" with LastIndexByte(':'), breaking bracketed IPv6 matches** · Medium · Speculative — Parse subset entries with `net.SplitHostPort` instead of `LastIndexByte`; add an IPv6 subset unit test; confirm the Envoy-emitted wire format to retire speculative confidence  <!-- fp: llm-d/llm-d-router:bug:subset-filter-ipv6-address-parse -->
   - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/candidates.go#L124-L139
   - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/requestcontrol/candidates.go#L144-L154
+- **fallbackToRandomEndpoint formats IPv6 via string concatenation, omitting brackets — 503 on body-less requests in IPv6 clusters** · High · Confirmed — Merge PR #2607 or apply the one-line `net.JoinHostPort` fix so the fallback path matches the normal path's IPv6 bracketing  <!-- fp: llm-d/llm-d-router:bug:ipv6-fallback-endpoint-string-concat -->
+  - issue: https://github.com/llm-d/llm-d-router/issues/2606
+  - issue: https://github.com/llm-d/llm-d-router/pull/2607
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/handlers/request.go#L66
+- **Flow control queue gauges can go temporarily negative when GC prunes a series concurrently with a request reviving the flow** · Medium · Confirmed — Synchronize delete with recording — hold the registry lock around `DeletePartialMatch` calls or use atomic reference counting so a revived flow increments after the delete  <!-- fp: llm-d/llm-d-router:bug:flowcontrol-metric-gc-race-negative-gauges -->
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1
 
 ## Performance
 
@@ -151,6 +158,9 @@ last_updated: 2026-08-29
 - **Metrics extractor clones the full Metrics struct (two maps) per endpoint per scrape, then populateLoRAMetrics discards those maps and allocates two fresh ones** · Low · Confirmed — Skip cloning the two LoRA maps when LoRA metrics will be repopulated (clear in place, or leave nil in `Clone` and let `populateLoRAMetrics` allocate), so each scrape allocates each map once instead of twice  <!-- fp: llm-d/llm-d-router:perf:metrics-extractor-clone-then-discard-lora-maps-per-scrape -->
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L125
   - code: https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L249-L250
+- **Flow registry GC calls DeletePartialMatch on eight metric vectors per collected flow — full vector scan under churn** · Low · Likely — Batch collected flows into a single sweep per metric vector, or index by flow label so delete is O(1) per series instead of a full-vector scan  <!-- fp: llm-d/llm-d-router:perf:flowcontrol-gc-deletepartialmatch-scan -->
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580
+  - code: https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1
 
 ## Features & RFCs
 
