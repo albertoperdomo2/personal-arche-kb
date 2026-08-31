@@ -17,9 +17,12 @@ Where are the real improvement opportunities in llm-d-sc — in the classificati
 
 **Initial code review and benchmark analysis complete.** The pipeline mechanics are well-engineered; the primary gap is classification accuracy on independently-authored prompts (anchor quality), not pipeline performance.
 
+**Metrics accuracy benchmark written and validated** (`tests/metrics_accuracy.rs`). Three tests prove the single-flight metrics bug with real model weights. Ready for a fix PR.
+
 ## Key documents
 
 - [[2026-08-27 - Pipeline review and findings]] — code-level pipeline review against HEAD `f6008c9`, cross-referenced with Praxis filter benchmarks from `llm-d-sc-praxis-filter/bench/BENCHMARKS.md` and `FINDINGS.md`.
+- [[2026-08-27 - Metrics accuracy benchmark characterization]] — characterization of `tests/metrics_accuracy.rs`: what each test measures, how to interpret output, success criteria before and after fix, relationship to Praxis B-1.
 
 ## Working conclusion
 
