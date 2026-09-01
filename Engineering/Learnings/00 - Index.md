@@ -6,6 +6,7 @@ One file per learning keeps them searchable. Name them descriptively (e.g. `vLLM
 
 ## Learnings
 - [[Arche Vega-Lite renderer guardrails]] — why valid charts can fail Arche's pre-render safety/feature guard, plus safe condition and composition workarounds.
+- [[BenchFlow distributed tracing - instrumentation, collection, metrics, and reports]] — how tracing is enabled, component instrumentation, OTel and Jaeger flow, artifact collection, metric provenance, the validated 23-series inventory, and the post-run MLflow report.
 - [[CephFS performance tuning for KV cache offloading]] — shareable, end-to-end CephFS tuning guide for vLLM KV-cache workloads, including OpenShift commands, manifests, validation, performance results, and rollback.
 - [[CephFS tuning guide - concepts and rationale]] — concise, implementation-oriented guide to the Ceph/Rook, 200G networking, multi-NIC OSD, StorageClass, PVC, and vLLM settings used for KV-cache offloading, including verification and rollback.
 - [[IBM Cloud VPC LB idle timeout on OCP IPI clusters]] — the service annotation for idle timeout is ignored by the OCP-bundled CCM on IPI clusters; must use a controller that calls the private VPC API directly to update all listeners. Includes private-endpoint requirement and sequential-update constraint.
