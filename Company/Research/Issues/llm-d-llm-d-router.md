@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-09-03
+last_updated: 2026-09-02
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -55,6 +55,8 @@ last_updated: 2026-09-03
   - code: [https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99](https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99)
   - code: [https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255](https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255)
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go#L91-L92](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go#L91-L92)
+- **Measure observability (tracing) performance overhead for llm-d-router** · Low · Confirmed — Run `test/perf/` optimized-baseline with tracing off and samplerArg 0.01/0.1/1.0; publish report on default sampling rate (parent llm-d/llm-d#2389).   
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2665](https://github.com/llm-d/llm-d-router/issues/2665)
 ## Bugs
 
 - **Sidecar connector handlers buffer request bodies without a size limit** · Medium · Confirmed — Add `MaxBytesReader` route boundary with configurable limit + 413   
@@ -138,6 +140,21 @@ last_updated: 2026-09-03
   - issue: [https://github.com/llm-d/llm-d-router/issues/2650](https://github.com/llm-d/llm-d-router/issues/2650)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286)
+- **mm-embeddings-cache-producer records decode pod instead of encode pod in E/PD disaggregation** · High · Confirmed — Record encode-profile target endpoints (configurable `encodeProfile`), fall back to primary when no encode profile ran; fixes encoder-cache affinity always scoring 0. Open PR targets this (fixes #2626).   
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2626](https://github.com/llm-d/llm-d-router/issues/2626) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/prerequest.go#L57](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/prerequest.go#L57) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/prerequest.go#L70](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/prerequest.go#L70) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go#L465](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go#L465) 
+- **/render reorders JSON keys, breaking precise KV-cache prefix affinity** · High · Confirmed — Use rawBody directly for /render when EPP has not mutated the body, so token bytes match the original request. Open PR targets this (fixes #2641).   
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2641](https://github.com/llm-d/llm-d-router/issues/2641) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L134](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L134) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L163](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L163) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L346-L347](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer/vllm_http.go#L346-L347) 
+- **P/D returns 429/rejected-saturated when no decode endpoints are available** · Medium · Confirmed — Re-evaluate eligibility filters against original candidates to return 503/rejected-no-endpoints when the decode stage is absent vs saturated. Open PR targets this (fixes #2628).   
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2628](https://github.com/llm-d/llm-d-router/issues/2628) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/scheduling/scheduler_profile.go#L125](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/scheduling/scheduler_profile.go#L125) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/scheduling/scheduler_profile.go#L132-L136](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/scheduling/scheduler_profile.go#L132-L136) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go#L441](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_profile_handler.go#L441)
 
 ## Performance
 - **multimodal-embeddings producer acquires per-endpoint RLock on every scrape, serializing across all pods** · Medium · Likely — The `Produce` method takes `p.mutex.RLock` per endpoint and iterates all pods under `recordItemLookups`; under high endpoint counts this serializes metric extraction across the entire fleet. Consider batching the lookup or holding the lock once for all endpoints.
@@ -276,6 +293,13 @@ last_updated: 2026-09-03
   - **Impact:** Every sampled trace becomes a dashboard-reachable artifact with no cardinality cost (exemplars attach to existing histogram buckets).
   - **Rough effort:** Low-Medium — single-metric slice + OpenMetrics negotiation + panel.
   - issue: [https://github.com/llm-d/llm-d-router/issues/2637](https://github.com/llm-d/llm-d-router/issues/2637)
+- **Route async /v1/videos follow-up requests to the pod that owns the job** · Medium · Confirmed 
+  - **Problem:** The OpenAI-compatible videos API is async: POST creates a job, then GET/DELETE poll/download/cancel. Follow-ups are bodiless and routed to a random pod, so with N video-serving pods a poll is not guaranteed to reach the pod holding the job (vLLM-Omni/SGLang store results in the model server, not shared). 
+  - **Proposed approach:** (1) EPP parses POST response, maps video id→pod, routes follow-ups via the map (needs TTL/eviction, shared store for active-active); or (2) shared job storage in vLLM-Omni/SGLang so any replica answers, keeping the router stateless. 
+  - **Impact:** Correct async video routing; fixes polls missing the owning pod. 
+  - **Rough effort:** Medium — EPP job map + TTL/eviction, or backend shared-storage change. 
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2663](https://github.com/llm-d/llm-d-router/issues/2663) 
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/handlers/request.go#L61](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/pkg/epp/handlers/request.go#L61)
 
 ## Recently Resolved
 - **Unify ResourceExhausted handling: "no endpoints" vs "endpoint-saturated"** · Resolved 2026-09-03 (PR #2639 merged, fix in `82c573c6`)
