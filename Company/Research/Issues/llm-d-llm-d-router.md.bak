@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-09-03
+last_updated: 2026-09-02
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -49,12 +49,13 @@ last_updated: 2026-09-03
   - issue: [https://github.com/llm-d/llm-d-router/issues/2568](https://github.com/llm-d/llm-d-router/issues/2568)
 - **Add tracing to the coordinator (underspecified)** · Medium · Confirmed — Scope before implementing: root span around `pipeline.Execute` in `handleInference` plus per-step child spans in `pkg/coordinator/steps`, reusing `pkg/common/observability/tracing`; confirm correlation with EPP `request`/`request_orchestration` spans.   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2578](https://github.com/llm-d/llm-d-router/issues/2578)
-- **lora-affinity scorer rests ActiveModels on in-flight activity, not GPU residency; capacity heuristic compares incommensurable quantities** · High · Confirmed — PR #2625 merged (fix in `49d3d8cb`), but addresses only the `ActiveModels` doc comment; the semantic bug (in-flight activity ≠ GPU residency, capacity heuristic compares incommensurable quantities) persists. Still needs: source true residency from `/v1/models` or stop treating `ActiveModels` as spare `max_lora` capacity.   
+- **lora-affinity scorer rests ActiveModels on in-flight activity, not GPU residency; capacity heuristic compares incommensurable quantities** · High · Confirmed — Confirm the semantic with maintainers, then take the offered narrow PR: fix the `ActiveModels` doc comment and stop treating in-flight activity as spare `max_lora` capacity (or source residency from `/v1/models`). Decide whether an "adapter cache hit/miss" counter can honestly be claimed from this signal.   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2605](https://github.com/llm-d/llm-d-router/issues/2605)
   - code: [https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/interface/datalayer/metrics.go#L27](https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/interface/datalayer/metrics.go#L27)
   - code: [https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99](https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity/lora_affinity.go#L97-L99)
   - code: [https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255](https://github.com/llm-d/llm-d-router/blob/ead3e86f72814ea578f9ed1a82518a3dae1e5bed/pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go#L254-L255)
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go#L91-L92](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go#L91-L92)
+
 ## Bugs
 
 - **Sidecar connector handlers buffer request bodies without a size limit** · Medium · Confirmed — Add `MaxBytesReader` route boundary with configurable limit + 413   
@@ -140,9 +141,6 @@ last_updated: 2026-09-03
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286)
 
 ## Performance
-- **multimodal-embeddings producer acquires per-endpoint RLock on every scrape, serializing across all pods** · Medium · Likely — The `Produce` method takes `p.mutex.RLock` per endpoint and iterates all pods under `recordItemLookups`; under high endpoint counts this serializes metric extraction across the entire fleet. Consider batching the lookup or holding the lock once for all endpoints.
-  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/requestcontrol/dataproducer/multimodal/producer.go)
-
 
 - **Every scorer allocates a full endpoint map on the scheduling hot path** · Low · Likely — Benchmark; prototype reusable per-request score accumulator   
   - code: [https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/scheduling/scheduler_profile.go#L173](https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/scheduling/scheduler_profile.go#L173)
@@ -278,5 +276,4 @@ last_updated: 2026-09-03
   - issue: [https://github.com/llm-d/llm-d-router/issues/2637](https://github.com/llm-d/llm-d-router/issues/2637)
 
 ## Recently Resolved
-- **Unify ResourceExhausted handling: "no endpoints" vs "endpoint-saturated"** · Resolved 2026-09-03 (PR #2639 merged, fix in `82c573c6`)
 
