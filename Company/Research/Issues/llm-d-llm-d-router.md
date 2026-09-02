@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-08-30
+last_updated: 2026-09-02
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -129,6 +129,16 @@ last_updated: 2026-08-30
 - **Flow control queue gauges can go temporarily negative when GC prunes a series concurrently with a request reviving the flow** · Medium · Confirmed — Synchronize delete with recording — hold the registry lock around `DeletePartialMatch` calls or use atomic reference counting so a revived flow increments after the delete   
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580)
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1)
+- **Re-marshaling RequestContext.Body as map[string]any sorts nested JSON keys, corrupting tool schemas and precise KV-cache tokenization** · High · Confirmed — Forward `OriginalBody` byte-for-byte for untouched fields (or `sjson` edits on raw bytes); add regression test asserting non-alphabetical key order is preserved through prefill/decode/render legs. Reference fix: sidecar PRs #2591/#2595. No PR or assignee — open to pick up.  <!-- fp: llm-d/llm-d-router:bug:coordinator-remarshal-body-reorders-json-keys -->
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2621](https://github.com/llm-d/llm-d-router/issues/2621)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/server/handlers.go#L58](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/server/handlers.go#L58)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/decode_proxy.go#L52](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/decode_proxy.go#L52)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/prefill.go#L73](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/prefill.go#L73)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/render.go#L311](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/render.go#L311)
+- **prefix-cache-affinity TTFT load gate compares observed TTFT against substituted defaults (MaxFloat64/0) when an endpoint lacks the configured attribute** · Medium · Confirmed — Track open PR #2652; if stalled, exclude attribute-missing endpoints from both min computations and keep the sticky set (with a `missing_signal` decision metric) when either side has no observed value.  <!-- fp: llm-d/llm-d-router:bug:prefix-cache-affinity-ttft-gate-missing-signal -->
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2650](https://github.com/llm-d/llm-d-router/issues/2650)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215)
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286)
 
 ## Performance
 
@@ -265,6 +275,20 @@ last_updated: 2026-08-30
   - **Rough effort:** Low — config option + protocol wiring + test.
    
   - issue: [https://github.com/llm-d/llm-d-router/issues/2567](https://github.com/llm-d/llm-d-router/issues/2567)
+- **Replace the fixed 1e8-entry InMemoryIndex cap with memory-size-based eviction (existing TODO)** · Low · Speculative
+  - **Problem:** The in-memory KV-block index defaults to 100M entries with an explicit TODO to make it memory-size based. Each entry is a `BlockHash` plus a `*PodCache` (itself an LRU of up to 10 `PodEntry` values), so the fixed cap is a latent OOM risk under large prompt/corpus fan-out, and conversely cannot grow to use available memory on small fleets. This index is on the per-request scheduling hot path.
+  - **Proposed approach:** Define an index memory budget (configurable, derived from the container memory request) and switch the LRU sizing to an entry count derived from that budget and the measured per-entry footprint, with a metric exposing current entry count and evictions. Validate against the `index_test.go` workload before changing the default.
+  - **Impact:** Safe to ship at default and tunable to the pod's memory request; removes latent OOM risk.
+  - **Rough effort:** Medium — budget config + LRU sizing + metric.
+   
+  - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/kvcache/kvblock/in_memory.go#L35](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/kvcache/kvblock/in_memory.go#L35)
+- **Link EPP metrics to traces via Prometheus exemplars (trace_id on request-duration histogram)** · Low · Speculative
+  - **Problem:** The EPP has metrics and spans but nothing connects them; an operator seeing p99 rise has no path from the dashboard to the offending trace.
+  - **Proposed approach:** Attach a `trace_id` exemplar to `llm_d_epp_request_duration_seconds`, gated on `trace.SpanContextFromContext(ctx).IsSampled()` so unsampled traces do not produce dead links; resolve OpenMetrics negotiation on `/metrics` (controller-runtime `EnableOpenMetrics` or handler wrap); ship one Grafana panel. `RecordRequestLatencies` already receives the request `ctx`, so no signature change is needed. No PR or assignee — open to pick up.
+  - **Impact:** Every sampled trace becomes a dashboard-reachable artifact with no cardinality cost (exemplars attach to existing histogram buckets).
+  - **Rough effort:** Low-Medium — single-metric slice + OpenMetrics negotiation + panel.
+   
+  - issue: [https://github.com/llm-d/llm-d-router/issues/2637](https://github.com/llm-d/llm-d-router/issues/2637)
 
 ## Recently Resolved
 
