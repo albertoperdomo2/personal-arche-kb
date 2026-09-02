@@ -129,13 +129,13 @@ last_updated: 2026-09-02
 - **Flow control queue gauges can go temporarily negative when GC prunes a series concurrently with a request reviving the flow** · Medium · Confirmed — Synchronize delete with recording — hold the registry lock around `DeletePartialMatch` calls or use atomic reference counting so a revived flow increments after the delete   
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/metrics/metrics.go#L580)
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/registry/registry.go#L1)
-- **Re-marshaling RequestContext.Body as map[string]any sorts nested JSON keys, corrupting tool schemas and precise KV-cache tokenization** · High · Confirmed — Forward `OriginalBody` byte-for-byte for untouched fields (or `sjson` edits on raw bytes); add regression test asserting non-alphabetical key order is preserved through prefill/decode/render legs. Reference fix: sidecar PRs #2591/#2595. No PR or assignee — open to pick up.  <!-- fp: llm-d/llm-d-router:bug:coordinator-remarshal-body-reorders-json-keys -->
+- **Re-marshaling RequestContext.Body as map[string]any sorts nested JSON keys, corrupting tool schemas and precise KV-cache tokenization** · High · Confirmed — Forward `OriginalBody` byte-for-byte for untouched fields (or `sjson` edits on raw bytes); add regression test asserting non-alphabetical key order is preserved through prefill/decode/render legs. Reference fix: sidecar PRs #2591/#2595. No PR or assignee — open to pick up.   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2621](https://github.com/llm-d/llm-d-router/issues/2621)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/server/handlers.go#L58](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/server/handlers.go#L58)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/decode_proxy.go#L52](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/decode_proxy.go#L52)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/prefill.go#L73](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/prefill.go#L73)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/render.go#L311](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/coordinator/steps/render.go#L311)
-- **prefix-cache-affinity TTFT load gate compares observed TTFT against substituted defaults (MaxFloat64/0) when an endpoint lacks the configured attribute** · Medium · Confirmed — Track open PR #2652; if stalled, exclude attribute-missing endpoints from both min computations and keep the sticky set (with a `missing_signal` decision metric) when either side has no observed value.  <!-- fp: llm-d/llm-d-router:bug:prefix-cache-affinity-ttft-gate-missing-signal -->
+- **prefix-cache-affinity TTFT load gate compares observed TTFT against substituted defaults (MaxFloat64/0) when an endpoint lacks the configured attribute** · Medium · Confirmed — Track open PR #2652; if stalled, exclude attribute-missing endpoints from both min computations and keep the sticky set (with a `missing_signal` decision metric) when either side has no observed value.   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2650](https://github.com/llm-d/llm-d-router/issues/2650)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L205-L215)
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L266-L286)
@@ -179,7 +179,6 @@ last_updated: 2026-09-02
   - **Proposed approach:** Add `gosec` to linters, run `make lint`, triage findings, replace vestigial `nolint:gosec` with scoped `//nolint:gosec // <reason>` where justified.
   - **Impact:** Surfaces weak crypto, hardcoded credentials, TLS-verification gaps on every presubmit.
   - **Rough effort:** Low — config change + one triage pass.
-   
   - code: [https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/.golangci.yml](https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/.golangci.yml)
   - code: [https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/sidecar/proxy/proxy.go#L457](https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/sidecar/proxy/proxy.go#L457)
 - **Implement per-request / per-band queue-wait TTL (currently stubbed to 0)** · Medium · Confirmed
@@ -187,7 +186,6 @@ last_updated: 2026-09-02
   - **Proposed approach:** Plumb per-request effective TTL from priority + outcome band through `Admit` -> `EnqueueAndWait`; gate behind config flag; add flow-control tests per band.
   - **Impact:** High-priority requests get appropriate deadlines; prevents bulk traffic from consuming priority budget.
   - **Rough effort:** Medium — touches flow-control admission + queue path; needs per-band tests.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2183](https://github.com/llm-d/llm-d-router/issues/2183)
   - code: [https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/requestcontrol/admission.go#L200](https://github.com/llm-d/llm-d-router/blob/f56f3bd9cd40300d55d8756b5d09f53ce0dc666a/pkg/epp/requestcontrol/admission.go#L200)
 - **RFC: header-phase-profile-handler — header-driven scheduling, secondary profiles, conditional execution** · Medium · Speculative
@@ -195,21 +193,18 @@ last_updated: 2026-09-02
   - **Proposed approach:** Declarative profile handler that reads profile selection from request headers; supports secondary profiles and conditional execution. Generalizes `disagg-profile-handler` and the conditional-decode gate into one mechanism.
   - **Impact:** Eliminates code changes for new routing strategies; unifies EPD role selection and A/B scheduling under a single declarative API.
   - **Rough effort:** Medium — design review against `scheduler_profile.go` + disagg-profile-handler contracts; implementation is plugin-layer.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2178](https://github.com/llm-d/llm-d-router/issues/2178)
 - **Native DisaggregatedSet CRD for encode/prefill/decode role-set routing** · Medium · Speculative
   - **Problem:** EPD topologies require ad-hoc profile-handler wiring; no first-class CRD for role-set routing.
   - **Proposed approach:** DisaggregatedSet CRD defining encode/prefill/decode role sets; scheduler selects role endpoints declaratively.
   - **Impact:** First-class support for EPD topologies; reduces configuration complexity.
   - **Rough effort:** High — CRD design, scheduler integration, sidecar coordination.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2143](https://github.com/llm-d/llm-d-router/issues/2143)
 - **KV events silently dropped during ZMQ replay cooldown are unmetricized, hiding prefix-cache index data loss from operators** · Low · Likely
   - **Problem:** When the ZMQ subscriber detects a sequence gap but `canAttemptReplay()` is false (within the 30s `replayCooldown` after a prior failure), it drops the live event with only a `debugLogger.Info` — no `metrics.*` counter is incremented. The same silent drop occurs for the join-mid-stream case when replay is in cooldown. These dropped events are KV-cache residency updates that the prefix-cache scorer relies on; losing them creates stale/missing residency for the affected pods until the next successful replay, silently degrading cache-aware routing accuracy. Every other failure mode in this file increments a `metrics.ZMQErrors` or `metrics.MessagesReceived` series, so these two paths are the only unobservable data-loss exits.
   - **Proposed approach:** Add a `metrics.ZMQEventsDroppedCooldown` counter (labeled by `podIdentifier`, like the existing `ZMQErrors`) incremented at both drop sites (zmq_subscriber.go:211 and :224).
   - **Impact:** Operators can alert on prefix-cache event loss and correlate it with routing-quality regressions; prefix-cache-aware routing accuracy becomes observable.
   - **Rough effort:** Low — counter definition in metrics.go + two increment calls.
-   
   - code: [https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L207-L211](https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L207-L211)
   - code: [https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L222-L224](https://github.com/llm-d/llm-d-router/blob/dd65342ee538ab76d4b9f7e1efb5d8e95385d06e/pkg/kvevents/zmq_subscriber.go#L222-L224)
 - **Generalize boundFairnessID/boundModel into a bounded-label wrapper enforced for all producer-owned metric vectors** · Medium · Confirmed
@@ -217,7 +212,6 @@ last_updated: 2026-09-02
   - **Proposed approach:** Propose a `BoundedGaugeVec`/`BoundedCounterVec` wrapper (or a `WithBoundedLabelValues` helper) that producers must use for any label fed by request data, so the cardinality cap is enforced at the metric-construction boundary. Migrate inflightload as the first consumer and add a lint/test guard that no producer-owned `*Vec` calls raw `WithLabelValues` on a client-derived label.
   - **Impact:** Makes the cardinality cap structural rather than convention-dependent; prevents memory-exhaustion DoS from client-supplied labels.
   - **Rough effort:** Low-Medium — wrapper type + migrate inflightload + lint guard.
-   
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/metrics/cardinality.go#L100-L112](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/metrics/cardinality.go#L100-L112)
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L456-L457](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/producer.go#L456-L457)
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go#L32)
@@ -227,7 +221,6 @@ last_updated: 2026-09-02
   - **Proposed approach:** Define a span convention (span name per plugin type, standard attribute keys for outcome, thresholds, and candidate counts before/after) in the scheduling plugin interface; add spans to `Filter`/`Score` implementations starting with `prefix-cache-affinity-filter`. Gate behind the existing `--tracing` flag so disabled deployments pay no cost.
   - **Impact:** Consistent debugging surface across the whole scheduling pipeline; per-request routing rationale visible in traces.
   - **Rough effort:** Low-Medium — interface change + implement for each filter/scorer.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2539](https://github.com/llm-d/llm-d-router/issues/2539)
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity/plugin.go#L163-L214)
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_headers_handler.go#L91-L96](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/epp/framework/plugins/scheduling/profilehandler/disagg/disagg_headers_handler.go#L91-L96)
@@ -236,14 +229,12 @@ last_updated: 2026-09-02
   - **Proposed approach:** Determine where in the ext-proc response path headers can be injected (likely in the post-scheduling response mutation), map flow-control signals (pool saturation, queue depth, admission status) to ORCA `application_utilization` / `queue_length` fields, and wire them through. Requires coordination with upstream envoy/gRPC-proxy ORCA header propagation.
   - **Impact:** Enables real-time traffic pacing from upstream control planes; reduces tail latency spikes from over-admission during saturation.
   - **Rough effort:** Medium-High — ext-proc response-path discovery, ORCA field mapping, upstream propagation testing.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2536](https://github.com/llm-d/llm-d-router/issues/2536)
 - **Optional data-dependency consumers with no producer load silently and score 0.0 — validate at config load** · Medium · Confirmed
   - **Problem:** `CreateMissingDataProducers` errors only when a *Required* consumed key has no producer; for *Optional* keys it logs a one-line warning and continues. Scorers/filters that declare `Optional` dependencies (e.g. `EndpointAttributeScorer`) silently load, run, and score every endpoint 0.0 when their producer is misconfigured or absent — indistinguishable from a scorer that discriminates badly. A benchmark built on such a config would report a meaningless result with no error.
   - **Proposed approach:** Add a config-load validation pass that, for scorers/filters whose Optional dependency has no producer, emits a loud persistent signal (not a single INFO line) or fails; consider per-plugin opt-in to promote specific Optional dependencies to Required so misconfiguration is caught before the first request.
   - **Impact:** Prevents silent routing degradation from misconfigured data-dependency graphs; makes data-graph completeness observable.
   - **Rough effort:** Low-Medium — validation pass + optional per-plugin promotion flag.
-   
   - code: [https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L129-L140](https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L129-L140)
   - code: [https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L97](https://github.com/llm-d/llm-d-router/blob/d32484978d1068c6ef8bc9d525bd10181c58b40e/pkg/epp/datalayer/data_graph.go#L97)
 - **Allow a distinct saturation plugin instance per disagg stage (prefill vs decode)** · Medium · Confirmed
@@ -251,7 +242,6 @@ last_updated: 2026-09-02
   - **Proposed approach:** Design the saturation config so a plugin instance can be registered per stage, then validate that admission uses the stage-appropriate instance on each leg. Confirm with flow-control owners whether hybrid mode should remain as a fallback.
   - **Impact:** Stage-specific limits (token-based prefill concurrency, request-based decode concurrency); removes the hybrid workaround's blind spot.
   - **Rough effort:** Medium — config design + admission validation on each leg.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2585](https://github.com/llm-d/llm-d-router/issues/2585)
   - code: [https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/controller/config.go](https://github.com/llm-d/llm-d-router/blob/644a885639ac64ca09d6f35af3a67fe61bcc2e31/pkg/epp/flowcontrol/controller/config.go)
 - **Coordinator support for Responses API `previous_response_id` via agentic-api (hydrate before scheduling, persist on response)** · Medium · Confirmed
@@ -259,35 +249,30 @@ last_updated: 2026-09-02
   - **Proposed approach:** Add a pre-scheduling hydration step that inlines prior turns from agentic-api (so scorers see the real prompt for cache-aware scoring) and a response-path persist step that stores the completed turn and returns the stored response id; streamed turns are relayed and buffered for persistence at stream end. Milestoned v0.11; agentic-api side is vllm-project/agentic-api#216. Confirm the streamed-turn buffering boundary so gateway-owned tool loops stay out of scope.
   - **Impact:** Cache-aware scoring on real prompts; no forced affinity to the prior-turn engine.
   - **Rough effort:** Medium — coordinator pipeline hooks + agentic-api endpoint configuration.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2596](https://github.com/llm-d/llm-d-router/issues/2596)
 - **RFC: SGLang P/D disaggregation where multiple DP/DEP ranks share one engine port (rank as first-class endpoint attribute)** · Medium · Confirmed
   - **Problem:** In SGLang deployments several DP/DEP ranks sit behind one HTTP port, so the EPP must select prefill and decode ranks independently and a sidecar on both legs translates the selected rank into `routed_dp_rank`. Concrete gaps against `main` at `75d6c85`: endpoint identity (rank ≠ `basePort+N`), prefill ingress needing a rank-aware proxy, per-rank load metrics (filter shared `/metrics` by `dp_rank`), KV-event ownership (`DataParallelRank` currently dropped), and split-leg correctness/failure semantics.
   - **Proposed approach:** Make DP rank a first-class endpoint attribute separate from pod IP/port; rank-aware prefill proxy; per-rank metrics (distinct scrapes or a rank dimension in the data layer); restore `DataParallelRank` in KV events. A working prototype with virtual ports exists; decompose into reviewable PRs after maintainers answer the 8 open design questions.
   - **Impact:** Correct SGLang P/D disaggregation on shared-port multi-rank deployments.
   - **Rough effort:** High — endpoint identity model, proxy, metrics, KV events, split-leg semantics.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2598](https://github.com/llm-d/llm-d-router/issues/2598)
 - **Support OTLP/HTTP as an alternative to the gRPC tracing exporter** · Low · Confirmed
   - **Problem:** The tracing exporter is gRPC-only today; OTLP/HTTP is a common egress shape in restricted/meshed networks where gRPC egress is blocked or load-balanced awkwardly.
   - **Proposed approach:** Add an exporter-protocol config option (grpc|http) reusing the existing OTel exporter wiring, with a test asserting both protocols build and ship a span; coordinate with #2578.
   - **Impact:** Broadens deployability with low risk.
   - **Rough effort:** Low — config option + protocol wiring + test.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2567](https://github.com/llm-d/llm-d-router/issues/2567)
 - **Replace the fixed 1e8-entry InMemoryIndex cap with memory-size-based eviction (existing TODO)** · Low · Speculative
   - **Problem:** The in-memory KV-block index defaults to 100M entries with an explicit TODO to make it memory-size based. Each entry is a `BlockHash` plus a `*PodCache` (itself an LRU of up to 10 `PodEntry` values), so the fixed cap is a latent OOM risk under large prompt/corpus fan-out, and conversely cannot grow to use available memory on small fleets. This index is on the per-request scheduling hot path.
   - **Proposed approach:** Define an index memory budget (configurable, derived from the container memory request) and switch the LRU sizing to an entry count derived from that budget and the measured per-entry footprint, with a metric exposing current entry count and evictions. Validate against the `index_test.go` workload before changing the default.
   - **Impact:** Safe to ship at default and tunable to the pod's memory request; removes latent OOM risk.
   - **Rough effort:** Medium — budget config + LRU sizing + metric.
-   
   - code: [https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/kvcache/kvblock/in_memory.go#L35](https://github.com/llm-d/llm-d-router/blob/ebc59e514b58eed1e6af796225f5786a3700a715/pkg/kvcache/kvblock/in_memory.go#L35)
 - **Link EPP metrics to traces via Prometheus exemplars (trace_id on request-duration histogram)** · Low · Speculative
   - **Problem:** The EPP has metrics and spans but nothing connects them; an operator seeing p99 rise has no path from the dashboard to the offending trace.
   - **Proposed approach:** Attach a `trace_id` exemplar to `llm_d_epp_request_duration_seconds`, gated on `trace.SpanContextFromContext(ctx).IsSampled()` so unsampled traces do not produce dead links; resolve OpenMetrics negotiation on `/metrics` (controller-runtime `EnableOpenMetrics` or handler wrap); ship one Grafana panel. `RecordRequestLatencies` already receives the request `ctx`, so no signature change is needed. No PR or assignee — open to pick up.
   - **Impact:** Every sampled trace becomes a dashboard-reachable artifact with no cardinality cost (exemplars attach to existing histogram buckets).
   - **Rough effort:** Low-Medium — single-metric slice + OpenMetrics negotiation + panel.
-   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2637](https://github.com/llm-d/llm-d-router/issues/2637)
 
 ## Recently Resolved
