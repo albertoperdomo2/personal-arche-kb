@@ -1,6 +1,6 @@
 ---
 repo: llm-d/llm-d-router
-last_updated: 2026-09-02
+last_updated: 2026-09-03
 ---
 
 # Backlog — llm-d/llm-d-router
@@ -110,7 +110,7 @@ last_updated: 2026-09-02
 - **InitTracing silently substitutes 10% sampling for unsupported sampler values and unparseable args** · Medium · Confirmed — Map each standard `OTEL_TRACES_SAMPLER` value to its SDK constructor in a `newSampler` helper, route parse and range failures through the error handler, reject ratios outside `[0,1]`; add table-driven tests asserting `sampler.Description()` per value   
   - issue: [https://github.com/llm-d/llm-d-router/issues/2530](https://github.com/llm-d/llm-d-router/issues/2530)
   - code: [https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/common/observability/tracing/telemetry.go#L76-L86](https://github.com/llm-d/llm-d-router/blob/149447dd6b9bbb00cd1c9169b07854332cdbb87e/pkg/common/observability/tracing/telemetry.go#L76-L86)
-- **Attributes.Clone() shares value references despite "deep copy" contract** · Low · Likely — Make `Put` clone the value (or have `Clone` call `v.Clone()` before re-`Put`) and add a test that mutating a stored value after `Clone` does not affect the clone; confirm no in-tree producer mutates a stored `Cloneable` in place. `Get` clones on read, mitigating reader aliasing.   
+- **Attributes.Clone() shares value references despite "deep copy" contract; `Get` clones on every read** · Medium · Confirmed — Move the clone from `Get` to `Put` (implement the `TODO: Clone into map to ensure isolation`); return the stored reference in `Get`. Fixes both the isolation contract (low-severity correctness) and the per-read clone cost (~S×N×K allocations/request on the scoring hot path). Audit all `Get` callers to confirm none mutate the returned value.   
   - code: [https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L62](https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L62)
   - code: [https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L92](https://github.com/llm-d/llm-d-router/blob/e1ca56b1d6baf7ea4f9b2ac20ef4af7ba6922f6f/pkg/epp/framework/interface/datalayer/attributemap.go#L92)
 - **MoRI-IO parallel-dispatch prefill leg caps token limits at the top level, a no-op for the generate API whose limits live under sampling_params** · Medium · Likely — Thread `apiType` into `runNIXLProtocolV2WriteParallel` and apply the same `tokenLimitMap`-based capping (and decode restore) the serial path uses, with a NIXLv2 test asserting a generate-API prefill body carries `sampling_params.max_tokens == 1`   
@@ -193,6 +193,8 @@ last_updated: 2026-09-02
 
 ## Features & RFCs
 
+- **`lint-security` not enforced in presubmit; gosec findings never block merges** · Medium · Confirmed — Add `lint-security` to the `presubmit` dependency chain and set `SECURITY_LINT_EXIT_CODE=1`; triage existing findings first. `Makefile` defaults `SECURITY_LINT_EXIT_CODE ?= 0` and `presubmit` omits `lint-security` from its dependency chain.
+  - code: [https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/Makefile](https://github.com/llm-d/llm-d-router/blob/b1bf63da5e9a52dc8815264809d00f45f5b5e966/Makefile)
 - **Enable the `gosec` linter; current `nolint:gosec` directives are vestigial** · Medium · Confirmed
   - **Problem:** `gosec` absent from enabled linters in `.golangci.yml`; `nolint:gosec` directives are unenforced. Security linting is absent across TLS, int conversion, and label-cardinality surfaces.
   - **Proposed approach:** Add `gosec` to linters, run `make lint`, triage findings, replace vestigial `nolint:gosec` with scoped `//nolint:gosec // <reason>` where justified.
