@@ -29,6 +29,7 @@ Let llm-d-router make independent per-request decisions about whether vLLM shoul
 | [[01 - Initial implementation plan]] | Cross-repository sequence, contracts, static policy, calibration, rollout, and acceptance criteria |
 | [[02 - vLLM primary-tier selective loading]] | Engine enforcement, primary CPU behavior, promotion correctness, and tests |
 | [[03 - llm-d-router selective load and offload policy and wiring]] | Router policy, request mutation, sidecar/coordinator propagation, and tests |
+| [[04 - vLLM selective load - problem statement]] | Focused motivation, required binary load opt-out, GPU-cache boundary, independent load/store controls, and success criteria |
 
 ## Current status
 
