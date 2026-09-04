@@ -8,6 +8,10 @@ status: "active"
 
 # ABC
 
+## Design checkpoint — 2026-09-03
+
+- [[Methodology/08 - Lookahead demand staging design investigation|Lookahead demand staging — design investigation]] — exploratory design for eager KV block loading against `vllm@2db1c4dc31`: no predictor, no new policy object. Recommends M0 (memoized probe + stage telemetry), L1 (CPU-side lookahead past the allocation barrier under a Cao-et-al. do-no-harm gate), L2 (budget-independent GPU staging, flag, off by default), and R1 (parallelize the single-threaded NVMe promotion job). Expected gain is regime-dependent and small on C64, zero on C32, never negative by construction; validation gates and falsification criteria included. Not implemented.
+
 ## Research reset — 2026-08-21
 
 - [[Continuation Readiness/00 - Index|COSTAR continuation-readiness research program]] — A0 certifies the existing C32/C64 traces for the continuation-retention oracle, TTL frontier, and request-readiness allocation. All 1,838 observed continuation edges are exact and ordered under `x_correlation_id`; explicit tool/lifecycle/workflow events remain absent.
@@ -32,6 +36,7 @@ status: "active"
 - [[Methodology/04 - Phase 1 Queued-Request Oracle Prefetch Implementation Guide|04 — Phase 1 Queued-Request Oracle Prefetch Implementation Guide]] — current admission-time, assume-resident implementation tutorial.
 - [[Methodology/05 - Initial versus Admission-Time Proactive Prefetching|05 — Initial versus Admission-Time Proactive Prefetching]] — end-to-end explanation of both designs, why the first failed, and how the current mechanism works.
 - [[Methodology/07 - Dynamic admission and cross-scope prefetch roadmap|07 — Dynamic admission and cross-scope prefetch roadmap]] — proposed model-neutral byte/deadline policy and roadmap from local cold data to cross-vLLM and cross-session advisories.
+- [[Methodology/08 - Lookahead demand staging design investigation|08 — Lookahead demand staging design investigation]] — 2026-09-03 design for eager loading built from the reactive path (M0/L1/L2/R1) with a do-no-harm promotion gate; proposed, not implemented.
 - [[Methodology/2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — controlled experiment plan for blind first-N queued-request promotion.
 
 ## Experiment reports
