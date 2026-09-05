@@ -36,28 +36,32 @@ Do not start with dynamic calibration, strict CPU-versus-storage selection, or a
 
 ## Verified current state
 
-| Capability | Current state | Initial action |
-|---|---|---|
-| vLLM secondary-tier load filtering | Exists through `kv_load_tiers` from PR #48123 | Reuse |
-| vLLM primary CPU load filtering | Missing; CPU lookup is unconditional | Add binary empty-filter enforcement |
-| vLLM per-request offload control | Exists through `max_offload_tokens` from PR #39983 | Reuse; do not add another API |
-| llm-d-router per-endpoint matches by tier | Exists as `CachedBlocksByTier` from precise-prefix-cache | Consume |
-| llm-d-router selective load policy | Missing | Add |
-| llm-d-router offload override policy | Missing | Add independently |
-| Direct EPP payload mutation | Exists through `PreRequest` and `MutatePayloadMap` | Reuse |
-| Sidecar/coordinator preservation | Not guaranteed; several paths rebuild `kv_transfer_params` | Audit and wire |
-| Runtime engine capability discovery | Missing | Use an operator-configured compatibility gate |
+
+| Capability                                | Current state                                              | Initial action                                |
+| ----------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| vLLM secondary-tier load filtering        | Exists through `kv_load_tiers` from PR #48123              | Reuse                                         |
+| vLLM primary CPU load filtering           | Missing; CPU lookup is unconditional                       | Add binary empty-filter enforcement           |
+| vLLM per-request offload control          | Exists through `max_offload_tokens` from PR #39983         | Reuse; do not add another API                 |
+| llm-d-router per-endpoint matches by tier | Exists as `CachedBlocksByTier` from precise-prefix-cache   | Consume                                       |
+| llm-d-router selective load policy        | Missing                                                    | Add                                           |
+| llm-d-router offload override policy      | Missing                                                    | Add independently                             |
+| Direct EPP payload mutation               | Exists through `PreRequest` and `MutatePayloadMap`         | Reuse                                         |
+| Sidecar/coordinator preservation          | Not guaranteed; several paths rebuild `kv_transfer_params` | Audit and wire                                |
+| Runtime engine capability discovery       | Missing                                                    | Use an operator-configured compatibility gate |
+
 
 ### Existing offload contract
 
 vLLM documents and implements `kv_transfer_params.max_offload_tokens` as a non-negative integer:
 
-| Value | Meaning |
-|---|---|
-| omitted or `null` | no per-request cap |
-| `0` | disable offload/store for the request |
-| positive `N` | only the first `N` request tokens are eligible for offload, subject to chunk/alignment rules |
-| non-integer, negative, or boolean | warn and treat as uncapped |
+
+| Value                             | Meaning                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| omitted or `null`                 | no per-request cap                                                                           |
+| `0`                               | disable offload/store for the request                                                        |
+| positive `N`                      | only the first `N` request tokens are eligible for offload, subject to chunk/alignment rules |
+| non-integer, negative, or boolean | warn and treat as uncapped                                                                   |
+
 
 The scheduler parses the field in `RequestOffloadState.__post_init__` and applies it in `_calc_num_offloadable_tokens`. This control does not select a destination tier; normal CPU/tiered storage policy still determines where eligible blocks go.
 
@@ -87,12 +91,14 @@ Represent absence separately from an explicit decision:
 
 ### Independent-decision matrix
 
-| Load decision | Offload decision | Payload | Example intent |
-|---|---|---|---|
-| deny | deny | `kv_load_tiers: []`, `max_offload_tokens: 0` | recompute and do not retain |
-| deny | allow | `kv_load_tiers: []`, offload field omitted or positive | recompute now, retain useful computed prefix |
-| allow | deny | load field omitted/allowed, `max_offload_tokens: 0` | reuse existing KV, do not add new stored KV |
-| allow | allow | load field omitted/allowed, offload field omitted or positive | normal reuse and retention |
+
+| Load decision | Offload decision | Payload                                                       | Example intent                               |
+| ------------- | ---------------- | ------------------------------------------------------------- | -------------------------------------------- |
+| deny          | deny             | `kv_load_tiers: []`, `max_offload_tokens: 0`                  | recompute and do not retain                  |
+| deny          | allow            | `kv_load_tiers: []`, offload field omitted or positive        | recompute now, retain useful computed prefix |
+| allow         | deny             | load field omitted/allowed, `max_offload_tokens: 0`           | reuse existing KV, do not add new stored KV  |
+| allow         | allow            | load field omitted/allowed, offload field omitted or positive | normal reuse and retention                   |
+
 
 Never derive `max_offload_tokens` from the load threshold. A low-value load does not imply that the recomputed KV has low future value.
 
@@ -121,11 +127,13 @@ Do not hard-code a threshold in code. Make `min_reusable_prefix_tokens` explicit
 
 Give the policy result an independent optional offload cap. The first production implementation can expose operator-controlled modes:
 
-| Mode | Output |
-|---|---|
-| `preserve` | omit `max_offload_tokens` |
-| `disable` | set `max_offload_tokens: 0` |
-| `cap` | set a validated positive token cap |
+
+| Mode       | Output                             |
+| ---------- | ---------------------------------- |
+| `preserve` | omit `max_offload_tokens`          |
+| `disable`  | set `max_offload_tokens: 0`        |
+| `cap`      | set a validated positive token cap |
+
 
 Keep the evaluator interface request-scoped so a later policy can choose the cap from request characteristics or predicted reuse. The static load threshold must not change this output.
 
@@ -268,12 +276,14 @@ Record model, revision/image, block size, offload chunk size, tensor/data parall
 
 Use explicit capability levels:
 
-| Capability | Allowed router output |
-|---|---|
-| unknown | omit both fields |
-| offload-cap-v1 | `max_offload_tokens` only, subject to #52397 safety |
-| binary-load-opt-out-v1 | `kv_load_tiers=[]` and safe offload cap |
+
+| Capability               | Allowed router output                               |
+| ------------------------ | --------------------------------------------------- |
+| unknown                  | omit both fields                                    |
+| offload-cap-v1           | `max_offload_tokens` only, subject to #52397 safety |
+| binary-load-opt-out-v1   | `kv_load_tiers=[]` and safe offload cap             |
 | source-selective-load-v1 | empty, CPU, STORAGE, combined, and safe offload cap |
+
 
 ## Cross-repository tests
 
