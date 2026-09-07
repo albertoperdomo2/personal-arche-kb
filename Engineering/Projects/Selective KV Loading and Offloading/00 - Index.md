@@ -2,7 +2,7 @@
 title: Selective KV loading and offloading
 date: 2026-09-07
 type: project-index
-status: calibration-planned
+status: calibration-in-progress
 topic: KV cache routing and offloading
 repos:
   - vllm-project/vllm
@@ -35,6 +35,7 @@ Let llm-d-router make independent per-request decisions about whether vLLM shoul
 | [[05 - 2026-09-04 vLLM binary opt-out cluster validation]] | Functional cluster validation of the vLLM binary load opt-out |
 | [[06 - 2026-09-05 naive llm-d-router static gating prototype]] | Implemented local static policy plugin, optimized-baseline configuration, validation, limitations, and transition to calibrated policy |
 | [[07 - Selective loading calibration test plan]] | Paired load-versus-recompute experiment, metrics, validity rules, threshold selection, and rollout acceptance criteria |
+| [[08 - 2026-09-07 selective loading calibration results]] | Functional validation, targeted break-even sweep, AgentX pressure evidence, provisional threshold, and validity limitations |
 
 ## Current status
 
@@ -44,7 +45,9 @@ The naive router version is committed locally as `llm-d/llm-d-router@ac5446ebda7
 
 The always-recompute benchmark demonstrated that disabling every external load can be severely harmful under a long-prefix, high-pressure workload. It validates the need for selective rather than unconditional opt-out, but it is not suitable for locating the break-even threshold because it produced no load samples and entered pathological queueing.
 
-A detailed static-threshold calibration plan is now ready. It holds the deployment fingerprint and offload behavior fixed, varies external reusable prefix length and pressure, compares paired load-allowed and forced-recompute requests, and chooses the smallest block-aligned prefix where loading wins reliably without violating throughput or latency guardrails.
+The first targeted calibration batch is complete. All 27 load-allowed probes consumed external KV and all 27 forced-recompute probes avoided it. In the quiescent three-repetition sweep, 752 observed external tokens was the first bucket where loading won 3/3 and every larger bucket also won 3/3. The provisional router recommendation is a conservative 1,024 external-token threshold, limited to this deployment fingerprint. This is not yet production calibration: the sweep is under-replicated, pressure was quiescent, and the concurrency-32 AgentX comparisons were confounded by node placement or telemetry-sampling drift.
+
+Sampled resolution telemetry also showed request-visible load waits above one second when two to four transfer jobs were pending. This supports a later pressure-aware veto, but the sample is too small to set that veto now.
 
 ## Current dependencies
 
@@ -70,16 +73,18 @@ A detailed static-threshold calibration plan is now ready. It holds the deployme
 - 2026-09-07: Define the static threshold as the smallest external reusable-token bucket where paired request-level TTFT reliably favors loading under representative pressure.
 - 2026-09-07: Treat transfer time as mechanism evidence, not the threshold objective; active DMA time alone omits queueing, synchronization, and scheduler completion observation.
 - 2026-09-07: Fail open to normal vLLM loading when backend capability or cache evidence is missing, stale, incompatible, or outside the calibrated envelope.
+- 2026-09-07: Accept the binary router-to-vLLM opt-out as functionally validated across 54 targeted probes.
+- 2026-09-07: Use 1,024 external reusable tokens as the conservative provisional threshold for the next router experiment; 752 tokens is the observed quiescent crossing candidate.
+- 2026-09-07: Reject the telemetry-overhead comparison and quantitative cross-arm AgentX ranking because node placement and telemetry settings were not jointly controlled.
 
 ## Next checkpoint
 
-1. Confirm whether router per-tier prefix values are inclusive prefix lengths or exclusive counts.
-2. Validate request-level correlation among router decision, selected endpoint, vLLM load outcome, prompt-token source, and TTFT.
-3. Run a small paired instrumentation check with load allowed and forced recompute.
-4. Run the concurrency-1 coarse reusable-prefix sweep.
-5. Narrow the sweep around the observed crossing and repeat at intended production pressure.
-6. select a conservative block-aligned threshold and validate it against always load on a representative trace.
-7. Enable the threshold only for the exact calibrated deployment fingerprint.
+1. Pin the model pod to one H100 host and keep telemetry sampling at 1.0 for every arm.
+2. Repeat 512, 768, 1,024, 1,536, and 2,048 external-token buckets with at least 20 valid repetitions at concurrency 1.
+3. Repeat the narrowed sweep under representative transfer pressure.
+4. Add a router decision identifier that joins router evidence, selected endpoint, vLLM resolution, and AIPerf request data.
+5. Compare always load, the provisional 1,024-token policy, and always recompute on the same representative trace.
+6. If the crossing moves with pressure, calibrate a hysteretic pressure veto from pending jobs/bytes and recent request-visible load wait.
 
 ## Related
 
