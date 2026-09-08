@@ -1,8 +1,8 @@
 ---
 title: Selective KV loading and offloading
-date: 2026-09-07
+date: 2026-09-08
 type: project-index
-status: calibration-in-progress
+status: router-threshold-live-validated
 topic: KV cache routing and offloading
 repos:
   - vllm-project/vllm
@@ -36,6 +36,7 @@ Let llm-d-router make independent per-request decisions about whether vLLM shoul
 | [[06 - 2026-09-05 naive llm-d-router static gating prototype]] | Implemented local static policy plugin, optimized-baseline configuration, validation, limitations, and transition to calibrated policy |
 | [[07 - Selective loading calibration test plan]] | Paired load-versus-recompute experiment, metrics, validity rules, threshold selection, and rollout acceptance criteria |
 | [[08 - 2026-09-07 selective loading calibration results]] | Functional validation, targeted break-even sweep, AgentX pressure evidence, provisional threshold, and validity limitations |
+| [[09 - 2026-09-08 Diadochos router threshold live validation]] | Live validation of the 1,024-token EPP gate, evidence-pipeline fixes, deterministic reduced-cache procedure, results, and caveats |
 
 ## Current status
 
@@ -48,6 +49,10 @@ The always-recompute benchmark demonstrated that disabling every external load c
 The first targeted calibration batch is complete. All 27 load-allowed probes consumed external KV and all 27 forced-recompute probes avoided it. In the quiescent three-repetition sweep, 752 observed external tokens was the first bucket where loading won 3/3 and every larger bucket also won 3/3. The provisional router recommendation is a conservative 1,024 external-token threshold, limited to this deployment fingerprint. This is not yet production calibration: the sweep is under-replicated, pressure was quiescent, and the concurrency-32 AgentX comparisons were confounded by node placement or telemetry-sampling drift.
 
 Sampled resolution telemetry also showed request-visible load waits above one second when two to four transfer jobs were pending. This supports a later pressure-aware veto, but the sample is too small to set that veto now.
+
+The 2026-09-08 Diadochos live validation deployed EPP image `dev-a808637f` with the 1,024-token threshold. After fixing the TLS service name and qualifying self-describing KV events with pod and model identity, a temporary 131,072-token HBM cache made eviction deterministic: the 512-token case recomputed with zero external tokens, while the 2,048-token case restored 2,032 external tokens and transferred 266,338,304 bytes. The normal 1,824,960-token GPU cache and production-like auth/debug settings were restored afterward. See [[09 - 2026-09-08 Diadochos router threshold live validation]].
+
+The live result is functional evidence, not new threshold calibration. It used one probe per branch, no event replay or index warmup, and a redundant KServe tokenizer remained crashing outside the successful tokenization path.
 
 ## Current dependencies
 
@@ -77,6 +82,9 @@ Sampled resolution telemetry also showed request-visible load waits above one se
 - 2026-09-07: Use 1,024 external reusable tokens as the conservative provisional threshold for the next router experiment; 752 tokens is the observed quiescent crossing candidate.
 - 2026-09-07: Reject the telemetry-overhead comparison and quantitative cross-arm AgentX ranking because node placement and telemetry settings were not jointly controlled.
 
+- 2026-09-08: Validate the 1,024-token router gate end to end on Diadochos after fixing the TLS FQDN and self-describing, model-qualified KV-event identity.
+- 2026-09-08: Accept the reduced-cache 512-recompute and 2,048-restore pair as functional validation only; reject the earlier full-cache attempts for enforcement/performance conclusions.
+
 ## Next checkpoint
 
 1. Pin the model pod to one H100 host and keep telemetry sampling at 1.0 for every arm.
@@ -97,4 +105,4 @@ Sampled resolution telemetry also showed request-visible load waits above one se
 
 ## Provenance
 
-Direct code inspection of `vllm-project/vllm`, cluster validation of the v0.27.0-based selective-load image, stakeholder clarification from Maroon, the earlier router design inspection at `b1bf63da5e9a52dc8815264809d00f45f5b5e966`, the implemented local router prototype at `ac5446ebda7b5ef2b7c42254eff6ef8bce19d6c4`, and the paired calibration design developed on 2026-09-07. Router focused tests and full presubmit were observed passing before this update.
+Direct code inspection of `vllm-project/vllm`, cluster validation of the v0.27.0-based selective-load image, stakeholder clarification from Maroon, the earlier router design inspection at `b1bf63da5e9a52dc8815264809d00f45f5b5e966`, the implemented local router prototype at `ac5446ebda7b5ef2b7c42254eff6ef8bce19d6c4`, and the paired calibration design developed on 2026-09-07, and the Diadochos router-threshold live validation on 2026-09-08. Router focused tests and full presubmit were observed passing before this update.
