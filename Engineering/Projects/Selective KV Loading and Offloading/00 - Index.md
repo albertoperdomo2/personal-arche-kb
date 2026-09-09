@@ -1,8 +1,8 @@
 ---
 title: Selective KV loading and offloading
-date: 2026-09-08
+date: 2026-09-09
 type: project-index
-status: router-threshold-live-validated
+status: qwen-performance-experiment-inconclusive
 topic: KV cache routing and offloading
 repos:
   - vllm-project/vllm
@@ -37,6 +37,7 @@ Let llm-d-router make independent per-request decisions about whether vLLM shoul
 | [[07 - Selective loading calibration test plan]] | Paired load-versus-recompute experiment, metrics, validity rules, threshold selection, and rollout acceptance criteria |
 | [[08 - 2026-09-07 selective loading calibration results]] | Functional validation, targeted break-even sweep, AgentX pressure evidence, provisional threshold, and validity limitations |
 | [[09 - 2026-09-08 Diadochos router threshold live validation]] | Live validation of the 1,024-token EPP gate, evidence-pipeline fixes, deterministic reduced-cache procedure, results, and caveats |
+| [[Research/KV Cache Offloading/Qwen3-32B/2026-09-09 - Qwen3-32B selective loading bimodal comparison|2026-09-09 Qwen3-32B selective loading bimodal comparison]] | Four-replica TP2 mechanism result, invalid performance A/B verdict, and corrected isolated experiment |
 
 ## Current status
 
@@ -53,6 +54,8 @@ Sampled resolution telemetry also showed request-visible load waits above one se
 The 2026-09-08 Diadochos live validation deployed EPP image `dev-a808637f` with the 1,024-token threshold. After fixing the TLS service name and qualifying self-describing KV events with pod and model identity, a temporary 131,072-token HBM cache made eviction deterministic: the 512-token case recomputed with zero external tokens, while the 2,048-token case restored 2,032 external tokens and transferred 266,338,304 bytes. The normal 1,824,960-token GPU cache and production-like auth/debug settings were restored afterward. See [[09 - 2026-09-08 Diadochos router threshold live validation]].
 
 The live result is functional evidence, not new threshold calibration. It used one probe per branch, no event replay or index warmup, and a redundant KServe tokenizer remained crashing outside the successful tokenization path.
+
+The 2026-09-09 Qwen3-32B bimodal GuideLLM matrix also confirms end-to-end policy activation: the 1,024-token plugin reduced external prompt-token share from 3.4–3.8% to 1.5–1.7% at streams 64–128 and from 25.6% to 7.4% at streams 512. The performance comparison is rejected. The two arms ran concurrently on the same four H100 nodes and shared the same host NVMe path; unsaturated stages had little external reuse, while streams 512 was overloaded. The observed 33.5% throughput loss at streams 512 is retained as diagnostic evidence that short-prefix recomputation can amplify GPU pressure, not as a causal plugin ranking.
 
 ## Current dependencies
 
@@ -84,14 +87,16 @@ The live result is functional evidence, not new threshold calibration. It used o
 
 - 2026-09-08: Validate the 1,024-token router gate end to end on Diadochos after fixing the TLS FQDN and self-describing, model-qualified KV-event identity.
 - 2026-09-08: Accept the reduced-cache 512-recompute and 2,048-restore pair as functional validation only; reject the earlier full-cache attempts for enforcement/performance conclusions.
+- 2026-09-09: Accept the Qwen3-32B bimodal run as an aggregate mechanism check; reject it for performance ranking and threshold calibration because the arms shared nodes and NVMe, stable stages were HBM-dominated, and the externally active stage was saturated.
+- 2026-09-09: Do not transfer the provisional 1,024-token Nemotron threshold to Qwen3-32B without isolated, model-specific calibration.
 
 ## Next checkpoint
 
-1. Pin the model pod to one H100 host and keep telemetry sampling at 1.0 for every arm.
-2. Repeat 512, 768, 1,024, 1,536, and 2,048 external-token buckets with at least 20 valid repetitions at concurrency 1.
-3. Repeat the narrowed sweep under representative transfer pressure.
-4. Add a router decision identifier that joins router evidence, selected endpoint, vLLM resolution, and AIPerf request data.
-5. Compare always load, the provisional 1,024-token policy, and always recompute on the same representative trace.
+1. Run Qwen3-32B treatments sequentially or on disjoint nodes and unique NVMe roots; alternate treatment order across at least three repetitions.
+2. Validate 512-token and 8,192-token prefixes separately under always-load, threshold, and always-recompute policies.
+3. Use a fixed working set larger than the 328,512-token per-replica HBM cache so external reuse is at least 20% at stable streams 64–128.
+4. Capture source and transfer counter deltas at cell boundaries and require at least 95% completion without persistent queue growth.
+5. Rejoin the prefix buckets only after each branch is verified, then compare mixed-workload throughput subject to TTFT and end-to-end SLOs.
 6. If the crossing moves with pressure, calibrate a hysteretic pressure veto from pending jobs/bytes and recent request-visible load wait.
 
 ## Related
