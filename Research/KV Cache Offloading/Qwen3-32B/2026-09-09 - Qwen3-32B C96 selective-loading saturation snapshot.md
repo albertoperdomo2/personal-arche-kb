@@ -17,7 +17,7 @@ status: "valid-balanced-subset"
 
 ## Executive summary
 
-At concurrency 96, recomputation beat external KV loading in every balanced comparison. Forced loading delivered 20.7–36.8% less request throughput and increased mean TTFT by 7.8–14.9×. This was not an idle-path result: workload-node NVMe busy time was 92–100%, the vLLM waiting queue averaged 56–96 requests, blocked loading work averaged 25–67 requests, and asynchronous lookup reached 0.53–6.55 seconds.
+At concurrency 96, recomputation beat external KV loading in every balanced comparison. Forced loading delivered 20.7–36.8% less request throughput and increased mean TTFT by 7.8–14.9×. This was not an idle-path result: workload-node NVMe busy time was 92–100%, the native vLLM waiting queue averaged 56–96 requests, derived deferred KV-lookup occupancy averaged 25–67 request-equivalents, and asynchronous lookup reached 0.53–6.55 seconds.
 
 The defensible interpretation is narrow: when this deployment's restore path is saturated, its queued lookup and promotion cost can exceed the prefill compute saved by reuse. The result supports selective loading under pressure; it does not prove that recomputation is universally preferable or establish a static crossover threshold.
 
@@ -57,18 +57,20 @@ TTFT shows an even larger penalty than aggregate throughput. Loading increased m
 
 ## Restore-path pressure
 
-The forced-load arms were not lightly loaded. Multiple independent signals show that the secondary-tier lookup and promotion path was under heavy pressure:
+The forced-load arms were not lightly loaded. Multiple independent signals show that the secondary-tier lookup and promotion path was under heavy pressure.
 
-| Reusable prefix | External prompt share | Mean async lookup | Mean blocked loading work | Mean vLLM waiting queue | CPU→GPU transfer | Workload-node NVMe busy |
+“Deferred KV-lookup occupancy” is not a native gauge or a count of unique requests. It is derived from `rate(vllm:kv_offload_lookup_async_delay_seconds_sum[5m])`, summed across pod and engine. The histogram sum accumulates request-seconds between a lookup first deferring and subsequently resolving or finishing; dividing its increase by wall-clock time produces average concurrent request-equivalents. By contrast, `vllm:num_requests_waiting` is a native instantaneous scheduler gauge. Figure 5 compares these related but distinct pressure signals; it does not claim they represent the same request population.
+
+| Reusable prefix | External prompt share | Mean async lookup | Deferred lookup occupancy | Mean vLLM waiting queue | CPU→GPU transfer | Workload-node NVMe busy |
 |---:|---:|---:|---:|---:|---:|---:|
-| 512 tokens | 4.10% | 0.532 s | 24.90 requests | 56.1 requests | 0.366 GiB/s | 92.1% |
-| 1,024 tokens | 5.37% | 1.314 s | 44.15 requests | 61.4 requests | 0.569 GiB/s | 95.4% |
-| 8,192 tokens | 8.56% | 6.551 s | 67.25 requests | 95.7 requests | 1.767 GiB/s | 100.0% |
+| 512 tokens | 4.10% | 0.532 s | 24.90 request-equiv. | 56.1 requests | 0.366 GiB/s | 92.1% |
+| 1,024 tokens | 5.37% | 1.314 s | 44.15 request-equiv. | 61.4 requests | 0.569 GiB/s | 95.4% |
+| 8,192 tokens | 8.56% | 6.551 s | 67.25 request-equiv. | 95.7 requests | 1.767 GiB/s | 100.0% |
 
 The evidence is internally consistent:
 
 - NVMe busy time was already above 92% for the two small-prefix cases and reached 100% at 8,192 tokens.
-- Mean blocked loading work rose from about 25 to 67 requests.
+- Derived deferred KV-lookup occupancy rose from about 25 to 67 request-equivalents.
 - The mean waiting queue rose from about 56 to 96 requests.
 - Mean asynchronous lookup time grew from 0.53 seconds to 6.55 seconds.
 - CPU-to-GPU traffic increased with prefix length, showing active promotion rather than an idle loader.
@@ -88,10 +90,10 @@ Figure 4 shows the growth in asynchronous lookup time as each requested external
 {"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 4. Asynchronous lookup time under forced load at C96","width":680,"height":280,"data":{"values":[{"prefix":"512","seconds":0.532},{"prefix":"1,024","seconds":1.314},{"prefix":"8,192","seconds":6.551}]},"mark":{"type":"line","point":true,"strokeWidth":3,"color":"#ff7f0e"},"encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"y":{"field":"seconds","type":"quantitative","title":"Mean asynchronous lookup (s)","scale":{"zero":true}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"seconds","type":"quantitative","title":"Mean lookup (s)","format":".3f"}]}}
 ```
 
-Figure 5 combines the two queue-pressure signals. Both the vLLM waiting queue and blocked KV-loading work grew with prefix size, reaching approximately 96 waiting and 67 blocked requests at 8,192 tokens.
+Figure 5 places the native vLLM waiting-queue gauge beside the derived deferred-lookup occupancy estimate. Both increased with prefix size, reaching approximately 96 waiting requests and 67 deferred request-equivalents at 8,192 tokens. The values are comparable as average concurrency pressure, but only the waiting queue is a directly sampled request count.
 
 ```vega-lite
-{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 5. Queue pressure under forced load at C96","width":680,"height":290,"data":{"values":[{"prefix":"512","metric":"vLLM waiting queue","requests":56.1},{"prefix":"512","metric":"Blocked KV-loading work","requests":24.90},{"prefix":"1,024","metric":"vLLM waiting queue","requests":61.4},{"prefix":"1,024","metric":"Blocked KV-loading work","requests":44.15},{"prefix":"8,192","metric":"vLLM waiting queue","requests":95.7},{"prefix":"8,192","metric":"Blocked KV-loading work","requests":67.25}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"metric"},"y":{"field":"requests","type":"quantitative","title":"Mean queued or blocked requests","scale":{"zero":true}},"color":{"field":"metric","type":"nominal","title":"Pressure signal","scale":{"domain":["vLLM waiting queue","Blocked KV-loading work"],"range":["#9467bd","#d62728"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"metric","type":"nominal"},{"field":"requests","type":"quantitative","title":"Mean requests","format":".1f"}]}}
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 5. Scheduler waiting versus deferred-lookup occupancy at C96","width":680,"height":290,"data":{"values":[{"prefix":"512","metric":"Native waiting gauge","request_equivalents":56.1},{"prefix":"512","metric":"Derived deferred-lookup occupancy","request_equivalents":24.90},{"prefix":"1,024","metric":"Native waiting gauge","request_equivalents":61.4},{"prefix":"1,024","metric":"Derived deferred-lookup occupancy","request_equivalents":44.15},{"prefix":"8,192","metric":"Native waiting gauge","request_equivalents":95.7},{"prefix":"8,192","metric":"Derived deferred-lookup occupancy","request_equivalents":67.25}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"metric"},"y":{"field":"request_equivalents","type":"quantitative","title":"Mean requests or request-equivalents","scale":{"zero":true}},"color":{"field":"metric","type":"nominal","title":"Pressure signal","scale":{"domain":["Native waiting gauge","Derived deferred-lookup occupancy"],"range":["#9467bd","#d62728"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"metric","type":"nominal"},{"field":"request_equivalents","type":"quantitative","title":"Mean value","format":".1f"}]}}
 ```
 
 Figure 6 isolates the storage-pressure signal. Workload-node NVMe busy time was above 92% in all three accepted cells and reached 100% in the 8,192-token cell.
