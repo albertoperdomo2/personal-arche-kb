@@ -15,6 +15,12 @@ status: "valid-balanced-subset"
 
 # Qwen3-32B C96 selective-loading saturation snapshot
 
+## Executive summary
+
+At concurrency 96, recomputation beat external KV loading in every balanced comparison. Forced loading delivered 20.7–36.8% less request throughput and increased mean TTFT by 7.8–14.9×. This was not an idle-path result: workload-node NVMe busy time was 92–100%, the vLLM waiting queue averaged 56–96 requests, blocked loading work averaged 25–67 requests, and asynchronous lookup reached 0.53–6.55 seconds.
+
+The defensible interpretation is narrow: when this deployment's restore path is saturated, its queued lookup and promotion cost can exceed the prefill compute saved by reuse. The result supports selective loading under pressure; it does not prove that recomputation is universally preferable or establish a static crossover threshold.
+
 ## Result
 
 Yes: at concurrency 96, recomputation beat external KV loading in every balanced policy pair. This statement intentionally excludes the 2,048-, 4,096-, and 16,384-token pairs affected by the repeatedly slow replica on `gjfjh`.
@@ -24,6 +30,22 @@ Yes: at concurrency 96, recomputation beat external KV loading in every balanced
 | 512 tokens | 24.610 req/s | 33.983 req/s | -27.6% | +38.1% |
 | 1,024 tokens | 18.050 req/s | 28.550 req/s | -36.8% | +58.2% |
 | 8,192 tokens | 6.177 req/s | 7.787 req/s | -20.7% | +26.1% |
+
+## Decision equations
+
+The report uses forced recomputation as the baseline. Loading delta is:
+
+$
+\Delta_{load}(L,C)=100\left(\frac{RPS_{load}(L,C)}{RPS_{recompute}(L,C)}-1\right).
+$
+
+A negative value means recomputation completed more requests per second. A useful first-order crossover estimate is:
+
+$
+L_{crossover}\approx\frac{T_{restore,p99}}{t_{prefill/token}}.
+$
+
+Under contention, $T_{restore,p99}$ must include storage lookup, queueing, CPU staging, and CPU-to-GPU promotion. The C96 evidence shows why storage service time alone is insufficient: queueing dominated the observed restore cost.
 
 ```vega-lite
 {"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 1. Balanced C96 throughput comparisons","width":680,"height":300,"data":{"values":[{"prefix":"512","policy":"Forced load","rps":24.610},{"prefix":"512","policy":"Forced recompute","rps":33.983},{"prefix":"1,024","policy":"Forced load","rps":18.050},{"prefix":"1,024","policy":"Forced recompute","rps":28.550},{"prefix":"8,192","policy":"Forced load","rps":6.177},{"prefix":"8,192","policy":"Forced recompute","rps":7.787}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"policy"},"y":{"field":"rps","type":"quantitative","title":"Successful requests/s","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Policy","scale":{"domain":["Forced recompute","Forced load"],"range":["#1f77b4","#ff7f0e"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"policy","type":"nominal"},{"field":"rps","type":"quantitative","title":"Successful requests/s","format":".3f"}]}}
@@ -38,7 +60,7 @@ TTFT shows an even larger penalty than aggregate throughput. Loading increased m
 | 8,192 tokens | 8,278.0 ms | 1,059.0 ms | 7.8× |
 
 ```vega-lite
-{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 2. Balanced C96 mean TTFT comparisons","width":680,"height":300,"data":{"values":[{"prefix":"512","policy":"Forced load","ttft_ms":1347.5},{"prefix":"512","policy":"Forced recompute","ttft_ms":131.7},{"prefix":"1,024","policy":"Forced load","ttft_ms":2401.5},{"prefix":"1,024","policy":"Forced recompute","ttft_ms":161.1},{"prefix":"8,192","policy":"Forced load","ttft_ms":8278.0},{"prefix":"8,192","policy":"Forced recompute","ttft_ms":1059.0}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"policy"},"y":{"field":"ttft_ms","type":"quantitative","title":"Mean TTFT (ms)","scale":{"type":"log"}},"color":{"field":"policy","type":"nominal","title":"Policy","scale":{"domain":["Forced recompute","Forced load"],"range":["#1f77b4","#ff7f0e"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"policy","type":"nominal"},{"field":"ttft_ms","type":"quantitative","title":"Mean TTFT (ms)","format":",.1f"}]}}
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 2. Balanced C96 mean TTFT comparisons","width":680,"height":300,"data":{"values":[{"prefix":"512","policy":"Forced load","ttft_ms":1347.5},{"prefix":"512","policy":"Forced recompute","ttft_ms":131.7},{"prefix":"1,024","policy":"Forced load","ttft_ms":2401.5},{"prefix":"1,024","policy":"Forced recompute","ttft_ms":161.1},{"prefix":"8,192","policy":"Forced load","ttft_ms":8278.0},{"prefix":"8,192","policy":"Forced recompute","ttft_ms":1059.0}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"policy"},"y":{"field":"ttft_ms","type":"quantitative","title":"Mean TTFT (ms)","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Policy","scale":{"domain":["Forced recompute","Forced load"],"range":["#1f77b4","#ff7f0e"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"policy","type":"nominal"},{"field":"ttft_ms","type":"quantitative","title":"Mean TTFT (ms)","format":",.1f"}]}}
 ```
 
 ## Restore-path pressure
@@ -60,6 +82,31 @@ The evidence is internally consistent:
 - CPU-to-GPU traffic increased with prefix length, showing active promotion rather than an idle loader.
 - Only 4.1–8.6% of prompt tokens came from external KV in these cells. The system paid the congested restore-path cost while receiving relatively little prefill work reduction.
 - Reported vLLM CPU-cache utilization remained approximately 2% or lower, so the evidence points to secondary-tier I/O and queued promotion activity rather than exhaustion of configured CPU-cache capacity.
+
+
+Figure 3 expresses the same throughput result directly as the loading delta from the equation above. Every accepted C96 point is below zero; the 1,024-token restore produced the largest loss.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 3. Forced-load throughput delta at C96","width":680,"height":280,"data":{"values":[{"prefix":"512","delta":-27.6},{"prefix":"1,024","delta":-36.8},{"prefix":"8,192","delta":-20.7}]},"mark":{"type":"bar","color":"#d62728"},"encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"y":{"field":"delta","type":"quantitative","title":"Load throughput delta vs recompute (%)","scale":{"domain":[-45,0]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"delta","type":"quantitative","title":"Load delta (%)","format":".1f"}]}}
+```
+
+Figure 4 shows the growth in asynchronous lookup time as each requested external prefix becomes larger. At 8,192 tokens, mean lookup time was already 6.55 seconds.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 4. Asynchronous lookup time under forced load at C96","width":680,"height":280,"data":{"values":[{"prefix":"512","seconds":0.532},{"prefix":"1,024","seconds":1.314},{"prefix":"8,192","seconds":6.551}]},"mark":{"type":"line","point":true,"strokeWidth":3,"color":"#ff7f0e"},"encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"y":{"field":"seconds","type":"quantitative","title":"Mean asynchronous lookup (s)","scale":{"zero":true}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"seconds","type":"quantitative","title":"Mean lookup (s)","format":".3f"}]}}
+```
+
+Figure 5 combines the two queue-pressure signals. Both the vLLM waiting queue and blocked KV-loading work grew with prefix size, reaching approximately 96 waiting and 67 blocked requests at 8,192 tokens.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 5. Queue pressure under forced load at C96","width":680,"height":290,"data":{"values":[{"prefix":"512","metric":"vLLM waiting queue","requests":56.1},{"prefix":"512","metric":"Blocked KV-loading work","requests":24.90},{"prefix":"1,024","metric":"vLLM waiting queue","requests":61.4},{"prefix":"1,024","metric":"Blocked KV-loading work","requests":44.15},{"prefix":"8,192","metric":"vLLM waiting queue","requests":95.7},{"prefix":"8,192","metric":"Blocked KV-loading work","requests":67.25}]},"mark":"bar","encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"xOffset":{"field":"metric"},"y":{"field":"requests","type":"quantitative","title":"Mean queued or blocked requests","scale":{"zero":true}},"color":{"field":"metric","type":"nominal","title":"Pressure signal","scale":{"domain":["vLLM waiting queue","Blocked KV-loading work"],"range":["#9467bd","#d62728"]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"metric","type":"nominal"},{"field":"requests","type":"quantitative","title":"Mean requests","format":".1f"}]}}
+```
+
+Figure 6 isolates the storage-pressure signal. Workload-node NVMe busy time was above 92% in all three accepted cells and reached 100% in the 8,192-token cell.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 6. Workload-node NVMe busy time under forced load at C96","width":680,"height":280,"data":{"values":[{"prefix":"512","percent":92.1},{"prefix":"1,024","percent":95.4},{"prefix":"8,192","percent":100.0}]},"mark":{"type":"bar","color":"#9467bd"},"encoding":{"x":{"field":"prefix","type":"ordinal","sort":["512","1,024","8,192"],"title":"Externally reusable prefix (tokens)"},"y":{"field":"percent","type":"quantitative","title":"NVMe busy time (%)","scale":{"domain":[0,100]}},"tooltip":[{"field":"prefix","type":"nominal","title":"Reusable prefix (tokens)"},{"field":"percent","type":"quantitative","title":"NVMe busy (%)","format":".1f"}]}}
+```
 
 ## Interpretation
 
