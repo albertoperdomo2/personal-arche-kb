@@ -15,6 +15,8 @@ status: "valid-balanced-subset"
 
 # Qwen3-32B C96 selective-loading saturation snapshot
 
+This note is part of an ongoing investigation into selective KV loading. The goal is to determine when loading reusable KV from CPU or secondary storage is faster than recomputing the same prefix, while avoiding restore traffic that congests an already busy promotion path. The current work is calibrating a static reusable-token threshold for one Qwen3-32B deployment; its measurements are experimental evidence, not a final general-purpose policy.
+
 ## Executive summary
 
 At concurrency 96, recomputation beat external KV loading in every balanced comparison. Forced loading delivered 20.7–36.8% less request throughput and increased mean TTFT by 7.8–14.9×. This was not an idle-path result: workload-node NVMe busy time was 92–100%, the native vLLM waiting queue averaged 56–96 requests, derived deferred KV-lookup occupancy averaged 25–67 request-equivalents, and asynchronous lookup reached 0.53–6.55 seconds.
