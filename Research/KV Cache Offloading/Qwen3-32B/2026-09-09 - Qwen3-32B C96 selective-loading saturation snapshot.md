@@ -33,17 +33,9 @@ Yes: at concurrency 96, recomputation beat external KV loading in every balanced
 
 ## Decision equations
 
-The report uses forced recomputation as the baseline. Loading delta is:
+The report uses forced recomputation as the baseline. Loading delta is $\Delta_{load}(L,C)=100\left(\frac{RPS_{load}(L,C)}{RPS_{recompute}(L,C)}-1\right)$.
 
-$
-\Delta_{load}(L,C)=100\left(\frac{RPS_{load}(L,C)}{RPS_{recompute}(L,C)}-1\right).
-$
-
-A negative value means recomputation completed more requests per second. A useful first-order crossover estimate is:
-
-$
-L_{crossover}\approx\frac{T_{restore,p99}}{t_{prefill/token}}.
-$
+A negative value means recomputation completed more requests per second. A useful first-order crossover estimate is $L_{crossover}\approx\frac{T_{restore,p99}}{t_{prefill/token}}$.
 
 Under contention, $T_{restore,p99}$ must include storage lookup, queueing, CPU staging, and CPU-to-GPU promotion. The C96 evidence shows why storage service time alone is insufficient: queueing dominated the observed restore cost.
 
