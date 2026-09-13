@@ -7,6 +7,8 @@ model: "Qwen/Qwen3-32B"
 status: "ongoing"
 experiment: "llm-d-selective-loading-queue-gate-validation"
 matrix: "matrix-4951aa"
+followup_experiment: "llm-d-selective-loading-queue-gate-threshold-4"
+updated: "2026-09-12"
 ---
 
 # Qwen3-32B queue-aware selective-loading validation
@@ -19,11 +21,15 @@ The queue-aware arm produced the highest request throughput in four of five test
 
 The strongest improvements occurred in the previously identified pressure region. At 8K/C32, queue-aware reached 8.927 requests/s, 15.9% above forced recompute and 32.0% above forced load. At 8K/C64, it reached 12.133 requests/s, 19.6% above forced recompute and 54.0% above forced load. Mean TTFT was lower than both static arms in four cells. At 8K/C64 it traded a higher mean TTFT than recompute, 664.5 ms versus 535.0 ms, for 19.6% more throughput; it still avoided forced load's 2,447 ms mean and 47.3 s p99 TTFT.
 
-This is strong evidence that an endpoint-pressure veto is more useful than a reusable-token threshold alone for this deployment. It is not yet proof that the queue gate itself caused every improvement: the runs were executed once in a fixed policy order, and the current artifacts do not expose an unambiguous counter for decisions disabled specifically by the queue veto. Keep the feature experimental and validate decision attribution before treating 8 waiting requests as a production-calibrated value.
+A five-run sensitivity follow-up lowered `maxWaitingRequests` from 8 to 4. It did not improve the result: geometric-mean throughput fell 0.67%, mean TTFT increased 3.46%, and p99 TTFT increased 5.67% relative to threshold 8. More importantly, the archived 15-second queue samples never reached 8 in the threshold-8 runs. The benefit over forced loading therefore cannot yet be attributed primarily to the queue veto; the precise-prefix evidence screen may be avoiding futile external lookups when no reusable external tokens exist.
+
+## Validity verdict — Conditionally valid
+
+The threshold-4 and threshold-8 runs are configuration-matched and suitable for sensitivity comparison, but the mechanism attribution is incomplete. Prometheus samples the queue every 15 seconds while EPP evaluates endpoint metrics much more frequently, and the plugin does not expose a reason-labeled decision counter. The outcome ranking is valid; the number of queue-triggered vetoes is unknown.
 
 ## Question and policy under test
 
-The queue-aware policy was configured with `minExternalReusableTokens: 1` and `maxWaitingRequests: 8`. Therefore, the token screen permits loading whenever the selected endpoint reports any reusable KV outside GPU memory. The queue gate is the substantive selector:
+The queue-aware policy was configured with `minExternalReusableTokens: 1` and `maxWaitingRequests: 8`. Therefore, the token screen permits loading only when the selected endpoint reports reusable KV outside GPU memory. Requests with zero external tier evidence are recomputed even when the queue gate is open. Either screen can therefore disable loading:
 
 $$
 \operatorname{load} = (T_{\mathrm{external}} \ge 1) \land (\text{queue gate is open})
@@ -111,13 +117,46 @@ The same run retained substantial external loading: the archived summary reports
 
 The waiting gauge is the policy input, while the Prometheus artifact is a 15-second observation of it. The EPP computes its own endpoint-local EWMA from endpoint metric updates with a two-second half-life, so the archived series cannot reconstruct every exact close/reopen transition.
 
+## Threshold-4 sensitivity follow-up
+
+A follow-up changed only the queue close threshold from 8 to 4; hysteresis therefore reopened at 2 instead of 4. It reused the same five workloads, four TP2 replicas, node, runtime image, EPP image, warmup, and collection profile.
+
+| Cell | Threshold 8 req/s | Threshold 4 req/s | Throughput delta | T8 mean TTFT | T4 mean TTFT | TTFT delta | T8 p99 TTFT | T4 p99 TTFT |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1K / C64 | 26.253 | 26.283 | +0.11% | 114.8 ms | 112.5 ms | −1.95% | 212 ms | 212 ms |
+| 2K / C64 | 21.510 | 21.323 | −0.87% | 206.4 ms | 216.3 ms | +4.78% | 1,929 ms | 2,171 ms |
+| 4K / C32 | 11.510 | 11.573 | +0.55% | 199.0 ms | 200.1 ms | +0.59% | 420 ms | 442 ms |
+| 8K / C32 | 8.927 | 8.713 | −2.39% | 375.0 ms | 414.5 ms | +10.53% | 1,886 ms | 1,917 ms |
+| 8K / C64 | 12.133 | 12.043 | −0.74% | 664.5 ms | 689.4 ms | +3.75% | 6,017 ms | 6,597 ms |
+| Geometric mean | — | — | **−0.67%** | — | — | **+3.46%** | — | **+5.67%** |
+
+Figure 6 compares successful-request throughput from the GuideLLM run metrics at both thresholds.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 6. Throughput sensitivity to waiting-queue threshold","width":720,"height":320,"data":{"values":[{"cell":"1K / C64","threshold":"Threshold 8","value":26.253},{"cell":"1K / C64","threshold":"Threshold 4","value":26.283},{"cell":"2K / C64","threshold":"Threshold 8","value":21.51},{"cell":"2K / C64","threshold":"Threshold 4","value":21.323},{"cell":"4K / C32","threshold":"Threshold 8","value":11.51},{"cell":"4K / C32","threshold":"Threshold 4","value":11.573},{"cell":"8K / C32","threshold":"Threshold 8","value":8.927},{"cell":"8K / C32","threshold":"Threshold 4","value":8.713},{"cell":"8K / C64","threshold":"Threshold 8","value":12.133},{"cell":"8K / C64","threshold":"Threshold 4","value":12.043}]},"mark":{"type":"bar"},"encoding":{"x":{"field":"cell","type":"ordinal","sort":["1K / C64","2K / C64","4K / C32","8K / C32","8K / C64"],"title":"Reusable prefix / concurrency","axis":{"labelAngle":0}},"xOffset":{"field":"threshold"},"y":{"field":"value","type":"quantitative","title":"Successful request throughput (requests/s)","scale":{"zero":true}},"color":{"field":"threshold","type":"nominal","title":"Queue close threshold","scale":{"domain":["Threshold 8","Threshold 4"],"scheme":"category10"}},"tooltip":[{"field":"cell","type":"ordinal","title":"Workload"},{"field":"threshold","type":"nominal","title":"Policy"},{"field":"value","type":"quantitative","title":"Throughput (requests/s)","format":".3f"}]}}
+```
+
+Figure 6. Threshold 4 is effectively tied at low pressure and slightly worse in three cells. The largest throughput regression is 2.39% at 8K/C32.
+
+Figure 7 compares GuideLLM request-level mean TTFT using the same five pairs.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 7. Mean TTFT sensitivity to waiting-queue threshold","width":720,"height":320,"data":{"values":[{"cell":"1K / C64","threshold":"Threshold 8","value":114.8},{"cell":"1K / C64","threshold":"Threshold 4","value":112.5},{"cell":"2K / C64","threshold":"Threshold 8","value":206.4},{"cell":"2K / C64","threshold":"Threshold 4","value":216.3},{"cell":"4K / C32","threshold":"Threshold 8","value":199},{"cell":"4K / C32","threshold":"Threshold 4","value":200.1},{"cell":"8K / C32","threshold":"Threshold 8","value":375},{"cell":"8K / C32","threshold":"Threshold 4","value":414.5},{"cell":"8K / C64","threshold":"Threshold 8","value":664.5},{"cell":"8K / C64","threshold":"Threshold 4","value":689.4}]},"mark":{"type":"bar"},"encoding":{"x":{"field":"cell","type":"ordinal","sort":["1K / C64","2K / C64","4K / C32","8K / C32","8K / C64"],"title":"Reusable prefix / concurrency","axis":{"labelAngle":0}},"xOffset":{"field":"threshold"},"y":{"field":"value","type":"quantitative","title":"Mean TTFT (ms)","scale":{"zero":true}},"color":{"field":"threshold","type":"nominal","title":"Queue close threshold","scale":{"domain":["Threshold 8","Threshold 4"],"scheme":"category10"}},"tooltip":[{"field":"cell","type":"ordinal","title":"Workload"},{"field":"threshold","type":"nominal","title":"Policy"},{"field":"value","type":"quantitative","title":"Mean TTFT (ms)","format":".1f"}]}}
+```
+
+Figure 7. Threshold 4 improves mean TTFT only at 1K/C64. Its largest regression is 10.53% at 8K/C32.
+
+Raw `kserve_vllm:num_requests_waiting` was preserved at 15-second cadence. Across the final 300 seconds, no threshold-8 sample reached 8. Threshold-4 samples reached at least 4 in only 1.88% of samples at 2K/C64 and 3.75% at 8K/C64; the other three cells never reached 4. The EPP's two-second EWMA can still react to sub-scrape spikes, so these samples do not prove that the gate never closed. They do show that sustained queue pressure near either threshold was uncommon.
+
+Threshold 4 still beats the better static policy in four of five cells and has an 8.67% geometric-mean advantage over that per-cell static oracle. However, because lowering the queue threshold barely changes outcomes and generally worsens latency, the earlier benefit should be attributed to the combined selective policy, not specifically to the waiting-queue veto.
+
 ## Interpretation
 
 The matrix supports three conclusions.
 
 1. The old static rule is insufficient. Forced load wins 1K/C64 and 4K/C32, while forced recompute wins 2K/C64 and both 8K cells. Prefix length alone does not order the decision under changing concurrency and endpoint pressure.
-2. The waiting queue is a useful congestion signal. The queue-aware arm avoids the catastrophic forced-load TTFT tails at the overloaded cells and beats the best static throughput in four cells.
-3. The current threshold is promising for this exact deployment, but it is not yet portable. Model, TP, replica layout, HBM capacity, CPU tier, storage path, and traffic shape can move the close point.
+2. The combined selective policy is useful, but this experiment does not isolate the queue veto from the precise-prefix evidence screen. Thresholds 4 and 8 produce nearly identical outcomes, and sustained observed queues were below both close points.
+3. Threshold 8 is preferable to threshold 4 for this deployment, but neither value is production-calibrated. Model, TP, replica layout, HBM capacity, CPU tier, storage path, and traffic shape can move the close point.
 
 The result does not show that NVMe bandwidth alone should drive the gate. The policy uses endpoint waiting, and the available low-pressure raw slice was dominated by NVMe writes rather than reads. In addition, the archived node-level NVMe query includes both `mt46x` and `gjfjh` because it joins all release pods; node-level storage plots must be filtered to the model-serving node before causal interpretation.
 
@@ -132,9 +171,9 @@ The result does not show that NVMe bandwidth alone should drive the gate. The po
 
 ## Recommendation
 
-Retain `maxWaitingRequests: 8`, reopen at 4, and the fixed two-second half-life as an experimental deployment-specific setting for the next validation. Do not call it production-calibrated yet.
+Retain `maxWaitingRequests: 8`, reopen at 4, and the fixed two-second half-life as the experimental default. Threshold 4 provides no measurable benefit and should not replace it.
 
-The next smallest decisive test is the same five-cell matrix with policy order interleaved or randomized and explicit decision attribution. A single counter labeled `action=load|recompute` and `reason=token_threshold|waiting_queue|preserve`, or equivalent structured logs captured as artifacts, would let us verify that pressure cells contain both actions, align close/reopen transitions with endpoint waiting, and calculate outcome metrics for gated versus ungated intervals. No additional storage heuristic should be added until that attribution is available.
+Do not run another threshold sweep yet. The next smallest decisive test is explicit decision attribution on the same five cells: A single counter labeled `action=load|recompute` and `reason=token_threshold|waiting_queue|preserve`, or equivalent structured logs captured as artifacts, would let us verify that pressure cells contain both actions, align close/reopen transitions with endpoint waiting, and calculate outcome metrics for gated versus ungated intervals. No additional storage heuristic should be added until that attribution is available.
 
 ## MLflow run registry
 
@@ -155,3 +194,8 @@ The next smallest decisive test is the same five-cell matrix with policy order i
 | Queue-aware | 4K / C32 | [bab9cf05](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/421/runs/bab9cf05cf1447e6818f4ba947431663?workspace=benchflow) |
 | Queue-aware | 8K / C32 | [bfdf9660](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/424/runs/bfdf96609cb04ea59c5c07dc05fb50c5?workspace=benchflow) |
 | Queue-aware | 8K / C64 | [72c46bf2](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/425/runs/72c46bf2188c4cbdbed08ab2246c7e49?workspace=benchflow) |
+| Queue-aware, threshold 4 | 1K / C64 | [2e52fada](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/416/runs/2e52fada5e0946ba947f6ea29d76dc7f?workspace=benchflow) |
+| Queue-aware, threshold 4 | 2K / C64 | [7f77bdc0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/419/runs/7f77bdc022e3493db8c4b458e4fa3f12?workspace=benchflow) |
+| Queue-aware, threshold 4 | 4K / C32 | [2a717d62](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/421/runs/2a717d62795f4263a6d08f70c116811c?workspace=benchflow) |
+| Queue-aware, threshold 4 | 8K / C32 | [834441d5](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/424/runs/834441d563d94170acc6c2f4dfe597dd?workspace=benchflow) |
+| Queue-aware, threshold 4 | 8K / C64 | [bbdbd4d1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/425/runs/bbdbd4d10a154c58850633ee893f2e50?workspace=benchflow) |
