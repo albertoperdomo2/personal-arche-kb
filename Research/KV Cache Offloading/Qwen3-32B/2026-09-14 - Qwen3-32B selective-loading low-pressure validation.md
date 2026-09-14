@@ -87,13 +87,21 @@ Figure 2 shows GuideLLM output-token throughput, the most direct capacity measur
 
 The combined result is 1.34% higher. With one run per arm, this is parity rather than a statistically established gain.
 
-Figure 3 compares mean and request-level p99 TTFT.
+Figure 3 shows mean TTFT from the two GuideLLM run summaries.
 
 ```vega-lite
-{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 3. Time to first token under low pressure","width":680,"height":310,"data":{"values":[{"policy":"Current behavior","statistic":"Mean","value":306.1976},{"policy":"Combined 1024 + 8","statistic":"Mean","value":294.5607},{"policy":"Current behavior","statistic":"p99","value":656.8913},{"policy":"Combined 1024 + 8","statistic":"p99","value":637.3203}]},"mark":{"type":"bar"},"encoding":{"x":{"field":"statistic","type":"ordinal","sort":["Mean","p99"],"title":"TTFT statistic","axis":{"labelAngle":0}},"xOffset":{"field":"policy"},"y":{"field":"value","type":"quantitative","title":"TTFT (ms)","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Configuration","scale":{"domain":["Current behavior","Combined 1024 + 8"],"scheme":"category10"}},"tooltip":[{"field":"statistic","type":"ordinal","title":"Statistic"},{"field":"policy","type":"nominal","title":"Configuration"},{"field":"value","type":"quantitative","title":"TTFT (ms)","format":".2f"}]}}
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 3. Mean TTFT under low pressure","width":620,"height":300,"data":{"values":[{"policy":"Current behavior","value":306.1976},{"policy":"Combined 1024 + 8","value":294.5607}]},"layer":[{"mark":{"type":"bar"}},{"mark":{"type":"text","dy":-8,"color":"#222222","fontSize":12},"encoding":{"text":{"field":"value","type":"quantitative","format":".1f"}}}],"encoding":{"x":{"field":"policy","type":"nominal","sort":["Current behavior","Combined 1024 + 8"],"title":"Configuration","axis":{"labelAngle":0}},"y":{"field":"value","type":"quantitative","title":"Mean TTFT (ms)","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Configuration","scale":{"domain":["Current behavior","Combined 1024 + 8"],"scheme":"category10"}},"tooltip":[{"field":"policy","type":"nominal","title":"Configuration"},{"field":"value","type":"quantitative","title":"Mean TTFT (ms)","format":".1f"}]}}
 ```
 
-Both TTFT statistics are slightly lower with the combined policy. There is no analogue of the forced-load tail collapse observed in the saturated validation.
+Mean TTFT is 294.6 ms with the combined policy and 306.2 ms with current behavior, a 3.80% reduction.
+
+Figure 3a shows request-level p99 TTFT as a separate two-bar comparison.
+
+```vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","background":"white","title":"Figure 3a. p99 TTFT under low pressure","width":620,"height":300,"data":{"values":[{"policy":"Current behavior","value":656.8913},{"policy":"Combined 1024 + 8","value":637.3203}]},"layer":[{"mark":{"type":"bar"}},{"mark":{"type":"text","dy":-8,"color":"#222222","fontSize":12},"encoding":{"text":{"field":"value","type":"quantitative","format":".1f"}}}],"encoding":{"x":{"field":"policy","type":"nominal","sort":["Current behavior","Combined 1024 + 8"],"title":"Configuration","axis":{"labelAngle":0}},"y":{"field":"value","type":"quantitative","title":"p99 TTFT (ms)","scale":{"zero":true}},"color":{"field":"policy","type":"nominal","title":"Configuration","scale":{"domain":["Current behavior","Combined 1024 + 8"],"scheme":"category10"}},"tooltip":[{"field":"policy","type":"nominal","title":"Configuration"},{"field":"value","type":"quantitative","title":"p99 TTFT (ms)","format":".1f"}]}}
+```
+
+p99 TTFT is 637.3 ms with the combined policy and 656.9 ms with current behavior, a 2.98% reduction. Neither TTFT result shows the forced-load tail collapse observed in the saturated validation.
 
 Figure 4 compares mean and request-level p99 ITL.
 
@@ -103,7 +111,7 @@ Figure 4 compares mean and request-level p99 ITL.
 
 Mean ITL improves by 1.02%; p99 ITL regresses by 0.44%. The differences are operationally small and support equivalence.
 
-For a concise PR, Figures 1–4 are the recommended screenshots. Figure 1 communicates the takeaway; Figures 2–4 provide absolute throughput and latency values.
+For the PR, use Figure 2 for output-token throughput, Figure 3 for mean TTFT, and Figure 3a for p99 TTFT. Each is a simple independent two-bar comparison.
 
 ## Gate and mechanism evidence
 
