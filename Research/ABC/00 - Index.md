@@ -8,9 +8,22 @@ status: "active"
 
 # ABC
 
+## Lookahead demand staging result — 2026-09-07
+
+- [[Reports/2026-09-07 - Lookahead demand staging v1 to v3|Lookahead demand staging — v1 regression, diagnosis, fix, and the pivot to retrieval parallelism]] — **the design checkpoint below was implemented, measured, and is now a clean negative.** v1 cost −10.0% throughput and +40.4% mean TTFT; three probe-path defects were quantified (predicted +2.92 ms/step against an observed +3.35 ms) and fixed; the accepted paired run measured −1.7% throughput with p95 TTFT flat — indistinguishable from neutral.
+
+**Latest working conclusion.** Lookahead demand staging works mechanically — it removes 32.4% of external retrieval stall — but produces no end-to-end benefit on AgentX C64 with a local NVMe tier, because **admission is gated by batch capacity, not by metadata readiness**. The decisive evidence is that a 32.4% stall reduction moved `num_requests_running` by 1.9% and waiting depth by −1.8%: retrieval was not what requests were waiting on. vLLM's reactive path already overlaps retrieval with queue wait (the admission loop `continue`s on a deferred lookup and only `break`s on allocation failure), so lookahead's marginal population is just the requests behind a head-of-line allocation break.
+
+**Two generalizable findings**, both new:
+
+1. **Cost in any probing policy scales with per-probe burst size, not probe rate.** Cutting probes 7x left the synchronous lookup p99 unchanged; cutting the scan 2.6x halved it.
+2. **The filesystem tier's data path is serialized per job.** `submit_load`/`submit_store` enqueued one task per job, so `n_read_threads` only parallelized *across* requests. Benchmarked on the target NVMe: 512 × 2 MiB blocks take 372 ms (2.89 GB/s) serially versus 160 ms (6.72 GB/s) split — 2.33x, on a device the runs left 74% idle. Implemented as `v3`; **not yet measured end to end.**
+
+**Disposition.** Keep lookahead, defaulted off; do not sweep its knobs further. The next lever is the retrieval parallelization, which shortens the **demand** path for every request with an external hit and so is not subject to the capacity-bound argument.
+
 ## Design checkpoint — 2026-09-03
 
-- [[Methodology/08 - Lookahead demand staging design investigation|Lookahead demand staging — design investigation]] — exploratory design for eager KV block loading against `vllm@2db1c4dc31`: no predictor, no new policy object. Recommends M0 (memoized probe + stage telemetry), L1 (CPU-side lookahead past the allocation barrier under a Cao-et-al. do-no-harm gate), L2 (budget-independent GPU staging, flag, off by default), and R1 (parallelize the single-threaded NVMe promotion job). Expected gain is regime-dependent and small on C64, zero on C32, never negative by construction; validation gates and falsification criteria included. Not implemented.
+- [[Methodology/08 - Lookahead demand staging design investigation|Lookahead demand staging — design investigation]] — exploratory design for eager KV block loading against `vllm@2db1c4dc31`: no predictor, no new policy object. Recommends M0 (memoized probe + stage telemetry), L1 (CPU-side lookahead past the allocation barrier under a Cao-et-al. do-no-harm gate), L2 (budget-independent GPU staging, flag, off by default), and R1 (parallelize the single-threaded NVMe promotion job). Expected gain is regime-dependent and small on C64, zero on C32, never negative by construction; validation gates and falsification criteria included. **Superseded by the 2026-09-07 result above:** M0/L1 were implemented and measured neutral, R1 was implemented and remains unmeasured, and L2 was never built. The design's own gain model `min(W, P)` was falsified — it assumed a request runs once its data is ready, when in fact it runs when capacity frees.
 
 ## Research reset — 2026-08-21
 
@@ -36,7 +49,7 @@ status: "active"
 - [[Methodology/04 - Phase 1 Queued-Request Oracle Prefetch Implementation Guide|04 — Phase 1 Queued-Request Oracle Prefetch Implementation Guide]] — current admission-time, assume-resident implementation tutorial.
 - [[Methodology/05 - Initial versus Admission-Time Proactive Prefetching|05 — Initial versus Admission-Time Proactive Prefetching]] — end-to-end explanation of both designs, why the first failed, and how the current mechanism works.
 - [[Methodology/07 - Dynamic admission and cross-scope prefetch roadmap|07 — Dynamic admission and cross-scope prefetch roadmap]] — proposed model-neutral byte/deadline policy and roadmap from local cold data to cross-vLLM and cross-session advisories.
-- [[Methodology/08 - Lookahead demand staging design investigation|08 — Lookahead demand staging design investigation]] — 2026-09-03 design for eager loading built from the reactive path (M0/L1/L2/R1) with a do-no-harm promotion gate; proposed, not implemented.
+- [[Methodology/08 - Lookahead demand staging design investigation|08 — Lookahead demand staging design investigation]] — 2026-09-03 design for eager loading built from the reactive path (M0/L1/L2/R1) with a do-no-harm promotion gate. Implemented and measured; see [[Reports/2026-09-07 - Lookahead demand staging v1 to v3|the 2026-09-07 result]].
 - [[Methodology/2026-08-14 - Phase 1 queued-request oracle prefetch plan|2026-08-14 — Phase 1 queued-request oracle prefetch plan]] — controlled experiment plan for blind first-N queued-request promotion.
 
 ## Experiment reports
@@ -53,6 +66,7 @@ status: "active"
 - [[Reports/2026-08-22 - Clean-prefetch v1 repeat and attempted v2 invalidation|2026-08-22 — Clean-prefetch v1 repeat / attempted v2 invalidation]] — invalid for the surgical fix because both pods reused the exact v1 digest; the repeat reinforces the stale-FIFO and eviction-regret diagnosis.
 - [[Reports/2026-08-22 - Clean-prefetch v2 AgentX concurrency 64 comparison|2026-08-22 — Clean-prefetch v2 AgentX concurrency-64 comparison]] — v2 mechanically passed but fixed-N=64 failed as a performance policy: timely chunk hits did not make complete requests ready, and eviction regret remained high.
 - [[Reports/2026-08-23 - Working-set oracle AgentX first comparison|2026-08-23 — Working-set oracle AgentX first comparison]] — valid negative result for admission-time single-owner staging: 99.24% of intents still deferred at first lookup and performance remained near-neutral.
+- [[Reports/2026-09-07 - Lookahead demand staging v1 to v3|2026-09-07 — Lookahead demand staging v1 to v3]] — **valid**. The only properly paired comparison in the campaign. Mechanism accepted as neutral (−1.7% throughput, p95 TTFT flat); the capacity-bound finding explains why every staging attempt in this series has stalled at the same wall. Identifies the serialized filesystem data path as the next lever.
 - [[Version2/Reports/2026-08-19 - V2.1 first five-cell comparison|2026-08-19 — V2.1 first five-cell comparison]] — control plane and non-evicting safety validated; live data plane blocked by zero truly free CPU KV slots.
 
 ## Current conclusion
@@ -170,6 +184,18 @@ Next: build and validate a soft request/prefix expected-value ranking across C32
 - Working-set oracle control: [a34cca262119453a9837a2531c79c3de](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/a34cca262119453a9837a2531c79c3de?workspace=benchflow)
 - Working-set oracle treatment (mechanism active; negative readiness result): [39a70a1b52e241bcb48abe5338d56110](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/359/runs/39a70a1b52e241bcb48abe5338d56110?workspace=benchflow)
 
+### Lookahead demand staging (2026-09-04 → 09-07, experiment 328)
+
+- NVMe, stock v0.27.0 image: [65ccbf10c4354ab6b35e6e486b8b23a1](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/65ccbf10c4354ab6b35e6e486b8b23a1?workspace=benchflow)
+- NVMe, lookahead image, feature OFF (A/A gate, clean at +0.6%): [1573078c65f743c9a0bb3ce72be08237](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/1573078c65f743c9a0bb3ce72be08237?workspace=benchflow)
+- NVMe, v1 lookahead ON (valid regression: −10.0% throughput, +40.4% mean TTFT): [ffe1170ac7d54fc5b0b40e28ae21afb7](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/ffe1170ac7d54fc5b0b40e28ae21afb7?workspace=benchflow)
+- NVMe, v2 ON (**invalid**; no contemporaneous control, sibling failed at 17 min): [5786964561f441c183f0bc303c355c98](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/5786964561f441c183f0bc303c355c98?workspace=benchflow)
+- NVMe, v2 ON full scan (conditionally valid, cross-day): [ca3ecd3cbcae4ef8bbb1e4514cb9469c](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/ca3ecd3cbcae4ef8bbb1e4514cb9469c?workspace=benchflow)
+- **NVMe, v2 control — accepted pair**: [0e982c4a8094475fb84dfd63b9b9da0b](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/0e982c4a8094475fb84dfd63b9b9da0b?workspace=benchflow)
+- **NVMe, v2 @1024 treatment — accepted pair** (−1.7% throughput, p95 TTFT flat): [6c4bdb0195524b0c9109b3075edf79cb](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/6c4bdb0195524b0c9109b3075edf79cb?workspace=benchflow)
+- No-offload replicates (0.1304 / 0.1315 / 0.1283 req/s): [d7982fea41bc4fdba7eec32ca99e8604](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/d7982fea41bc4fdba7eec32ca99e8604?workspace=benchflow), [f5bd52f08c17455897d740ebdf1f9ebf](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/f5bd52f08c17455897d740ebdf1f9ebf?workspace=benchflow), [65a2930350254d459ff8cadce67f22f0](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/65a2930350254d459ff8cadce67f22f0?workspace=benchflow)
+- No-offload outlier (0.0217 req/s on identical config; establishes single-run variance): [5cffd9d9c0654cf5bdbf4640f24a30dd](https://mlflow.apps.psap-automation.ibm.rhperfscale.org/#/experiments/328/runs/5cffd9d9c0654cf5bdbf4640f24a30dd?workspace=benchflow)
+
 ## COSTAR finite-retention checkpoint — 2026-08-25
 
 [[Reports/COSTAR Offline Oracle/04 - Finite CPU retention oracle|The finite-CPU retention oracle]] passed its movement ground-truth gate with 0/898 mismatches. The corrected target is the external matched-token segment, not total cached group counts: 157,283 references, 116,409 unique keys, and 42/901 nonzero requests. Recorded residency caused 12 native reads totaling 36.44 seconds of device service; an equal-capacity clairvoyant next-use admission policy avoided all 12 by rejecting low-future-value ordinary arrivals. This establishes retention/admission headroom, not end-to-end TTFT benefit and not a need for proactive reads.
@@ -178,12 +204,12 @@ Next: measure how much of this oracle can be recovered by online signals availab
 
 ## Next experiment
 
-The current pair did not realize a perfect-residency oracle. Before another performance sweep:
+**Retrieval parallelism A/B (2026-09-07 onward).** The lookahead line is closed as neutral; the open question is whether parallelizing the filesystem tier's data path converts to TTFT.
 
-1. preserve the immutable complete candidate target and distinguish selected-subset completion from connector-authoritative full readiness;
-2. ensure or gate on source residency, or re-probe transient admission misses while mirroring completes;
-3. repair eviction-outcome coverage, since 64.8% of victim outcomes exceeded the current history;
-4. require the treatment to make at least 50% fewer requests defer before interpreting latency;
-5. then run replicated same-node crossovers and require at least 5% lower mean/p95 TTFT or 3% higher throughput.
+1. Same-batch pair, lookahead **off** in both arms, on `v0.27.0-lookahead-v3`.
+2. Vary only `blocks_per_task` inside the `secondary_tiers` entry: `0` reproduces the old one-task-per-job behaviour, the default `32` is the split.
+3. At least two repetitions per cell, given that one no-offload replicate came in 6x off.
+4. Verify a clean NVMe start per run — and read `benchflow-kv-cache` occupancy directly, **not** `storage_nvme_filesystem_usage_percent_by_node_mount`, which also counts the node's 1.8 TB model cache.
+5. Read `kv_offload_tiering_lookup_sync_delay_seconds` p99 and `num_requests_running` before throughput. A mechanism that reduces stall without moving the running count is not on the critical path.
 
-Do not increase the 8,192-chunk ceiling: the observed working sets were not clipped. If genuine request readiness still cannot meet the end-to-end gate, stop admission-time CPU staging and move prediction earlier than HTTP admission or integrate staging with source-data readiness.
+Standing gates from earlier checkpoints remain: preserve the immutable candidate target, repair eviction-outcome coverage, and require replicated same-node crossovers before accepting a latency claim.
