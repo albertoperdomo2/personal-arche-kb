@@ -13,6 +13,7 @@ One file per learning keeps them searchable. Name them descriptively (e.g. `vLLM
 - [[Routing Ceph over 200G NICs on OCP with PCI passthrough VFs]] — full investigation of 4 networking approaches (3 failed, 1 succeeded), big-bang MON migration procedure, 6 hidden gotchas, and monmap repair for cluster recovery. 1.3 GB/s write, 1.7 GB/s read verified on 200G fabric.
 - [[Forge extends only applies to presets]] — Forge `extends` merges preset-level fields, not top-level config.
 - [[Local NVMe hostPath requires explicit ready-node placement]] — NVMe hostPath volumes need node affinity to nodes with the device actually provisioned.
+- [[Podman machine disk image never shrinks without fstrim]] — the macOS VM's raw image ratchets upward and ignores guest deletions; `podman machine ssh 'sudo fstrim -av'` reclaimed 84 GB non-destructively.
 - [[RHOAI EPP requires an isolated Gateway listener]] — EPP needs its own Gateway listener; sharing with other routes breaks routing.
 - [[vLLM offloading spec architecture and dev-shm confound]] — how vLLM's offloading spec determines /dev/shm sizing and the confound with shared_memory_size.
 - [[vLLM offloading specs - CPUOffloadingSpec vs TieringOffloadingSpec]] — the two offloading spec types, when to use each, and how tier configuration works.
