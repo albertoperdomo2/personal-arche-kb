@@ -18,6 +18,8 @@ Definitions, experiment plans, implementation tutorials, and design discussions 
 
 ## Research synthesis
 
+- [[09 - RFC - Eager KV prefetching in vLLM|09 — RFC: Eager KV prefetching in vLLM]] — September 22 synthesis of current code, prior experimental evidence, candidate mechanisms, validation gates, and expected outputs; qualifies earlier capacity-bound and perfect-residency interpretations.
+
 - [[Methodology/06 - Deep Speculative Prefetching and Temperature Characterization|06 — Deep Speculative Prefetching and Temperature Characterization]] — literature synthesis motivating the event-driven temperature design.
 
 - [[07 - Dynamic admission and cross-scope prefetch roadmap|07 — Dynamic admission and cross-scope prefetch roadmap]] — model-neutral byte/deadline admission policy and the additional components required for cross-vLLM, temperature, and cross-session prefetch.
