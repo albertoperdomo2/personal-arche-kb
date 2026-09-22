@@ -8,11 +8,18 @@ status: "active"
 
 # ABC
 
+## Eager KV prefetching RFC — 2026-09-22
+
+- [[Methodology/09 - RFC - Eager KV prefetching in vLLM|RFC: Eager KV prefetching in vLLM]] — current design synthesis and proposed validation gates. The goal is earlier usable KV at CPU/GPU/layer boundaries without degrading generation. Prioritize actual CPU-ready/GPU-ready opportunity controls, then bounded queued-request GPU staging and earlier workflow advisories; layer-wise loading and tier pipelining remain conditional options. No new implementation is performed by this RFC.
+- **Evidence qualification:** the accepted lookahead pair demonstrated reduced deferred-lookup delay without demonstrated serving benefit. Capacity gating is a supported interpretation, not a universal conclusion established by stable running-request counts. Faster demand I/O must also demonstrate that its savings are exposed on the request critical path.
+- **Chronology update:** the September 22 filesystem handoff reports a serving regression for load-and-store splitting; the September 7 “not yet measured” status below is historical. The GIL explanation remains a hypothesis. The working-set experiment did not achieve a true perfect-residency oracle, and its 99.55% eventual chunk usefulness does not override 0.76% request readiness.
+- The RFC links the original evidence and MLflow registry, records current code at `1ea7c63f4a`, and provides three source-derived figures. Review its experiment gates before treating the historical next-experiment section below as the current recommendation.
+
 ## Lookahead demand staging result — 2026-09-07
 
 - [[Reports/2026-09-07 - Lookahead demand staging v1 to v3|Lookahead demand staging — v1 regression, diagnosis, fix, and the pivot to retrieval parallelism]] — **the design checkpoint below was implemented, measured, and is now a clean negative.** v1 cost −10.0% throughput and +40.4% mean TTFT; three probe-path defects were quantified (predicted +2.92 ms/step against an observed +3.35 ms) and fixed; the accepted paired run measured −1.7% throughput with p95 TTFT flat — indistinguishable from neutral.
 
-**Latest working conclusion.** Lookahead demand staging works mechanically — it removes 32.4% of external retrieval stall — but produces no end-to-end benefit on AgentX C64 with a local NVMe tier, because **admission is gated by batch capacity, not by metadata readiness**. The decisive evidence is that a 32.4% stall reduction moved `num_requests_running` by 1.9% and waiting depth by −1.8%: retrieval was not what requests were waiting on. vLLM's reactive path already overlaps retrieval with queue wait (the admission loop `continue`s on a deferred lookup and only `break`s on allocation failure), so lookahead's marginal population is just the requests behind a head-of-line allocation break.
+**September 7 working conclusion (qualified by the September 22 RFC above).** Lookahead demand staging works mechanically — it removes 32.4% of external retrieval stall — but produces no end-to-end benefit on AgentX C64 with a local NVMe tier, because **admission is gated by batch capacity, not by metadata readiness**. The decisive evidence is that a 32.4% stall reduction moved `num_requests_running` by 1.9% and waiting depth by −1.8%: retrieval was not what requests were waiting on. vLLM's reactive path already overlaps retrieval with queue wait (the admission loop `continue`s on a deferred lookup and only `break`s on allocation failure), so lookahead's marginal population is just the requests behind a head-of-line allocation break.
 
 **Two generalizable findings**, both new:
 
