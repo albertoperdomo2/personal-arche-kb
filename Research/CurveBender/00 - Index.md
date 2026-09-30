@@ -1,6 +1,6 @@
 ---
 title: CurveBender
-date: 2026-09-29
+date: 2026-09-30
 type: research-index
 topic: CurveBender
 status: active
@@ -72,7 +72,7 @@ The local repository is [curvebender-tools](/Users/aperdomo/workspace/redhat/cur
 | Evaluation and regression | CyberGym support was added to XGENTIC for Lightwell-style evaluation; regression integration was being planned. | Which task subset represents production use, and how is it added to release regression? |
 | Model performance | Initial configurations existed for Granite 5 SFT and DeepSeek; Granite RL checkpoints and DeepSeek P/D disaggregation still needed work. | Which checkpoint and serving configuration should become the accepted golden configuration? |
 | SRE and production readiness | No single visible plan; some contributors lacked cluster access. | Who owns the plan, access, on-call expectations, and operational acceptance criteria? |
-| Functional and chaos testing | Identified as critical and largely undefined, especially unhappy paths and protocol/feature coverage. | What production-representative matrix covers APIs, routing, offload, failures, and recovery? |
+| Functional and chaos testing | Issue 150 proposes static, function, and system buckets. Repository review found the structure sound but identified version-sensitive saturation behavior and a vLLM/router gap for `/v1/responses/render`. | Implement the profile-driven P0 gate and distinguish parsed routing from passthrough reachability. |
 | Observability | Custom dashboards exist and continue to evolve, but several signals were ambiguous or broken. | Which metrics express usable capacity, saturation, and user impact reliably? |
 
 ## Guardrails and operating assumptions
@@ -102,6 +102,7 @@ No single owned deliverable was assigned in the introduction. Confirm current ow
 
 - [[2026-09-28 - Project introduction and operating context]]
 - [[2026-09-29 - Daily sync - long context rollout and readiness]]
+- [[2026-09-30 - Functional test strategy review]]
 
 ### Repository anchors
 
