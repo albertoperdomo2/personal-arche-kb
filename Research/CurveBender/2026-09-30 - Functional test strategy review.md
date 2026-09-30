@@ -181,6 +181,8 @@ The static suite should also verify:
 
 ## Function-test matrix
 
+The executable case catalog, observed client contracts, assertion rules, and generated matrix are specified in [[2026-09-30 - Functional API compatibility matrix]]. That companion document is the source of truth for function-test case IDs and release-gate scope.
+
 Issue 150 says “five axes” but lists six entries. More significantly, a full Cartesian product will create invalid and redundant cases. Generate cases from a capability profile and use targeted pairwise combinations, plus hand-written tests for high-risk interactions.
 
 A useful case identity is:
