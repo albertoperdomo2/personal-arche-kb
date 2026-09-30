@@ -72,7 +72,7 @@ The local repository is [curvebender-tools](/Users/aperdomo/workspace/redhat/cur
 | Evaluation and regression | CyberGym support was added to XGENTIC for Lightwell-style evaluation; regression integration was being planned. | Which task subset represents production use, and how is it added to release regression? |
 | Model performance | Initial configurations existed for Granite 5 SFT and DeepSeek; Granite RL checkpoints and DeepSeek P/D disaggregation still needed work. | Which checkpoint and serving configuration should become the accepted golden configuration? |
 | SRE and production readiness | No single visible plan; some contributors lacked cluster access. | Who owns the plan, access, on-call expectations, and operational acceptance criteria? |
-| Functional and chaos testing | Issue 150 proposes static, function, and system buckets. Repository review found the structure sound but identified version-sensitive saturation behavior and a vLLM/router gap for `/v1/responses/render`. | Implement the profile-driven P0 gate and distinguish parsed routing from passthrough reachability. |
+| Functional and chaos testing | Functional tests are the immediate shared priority; system tests follow, with static expansion later. The agreed first implementation is a portable Python package/CLI that runs locally or in a pod, emits traceable artifacts, and avoids a controller. | Land the first runnable API matrix slice, validate it on Alberto's accessible llm-d clusters, then define official CurveBender execution targets after cluster access is clarified. |
 | Observability | Custom dashboards exist and continue to evolve, but several signals were ambiguous or broken. | Which metrics express usable capacity, saturation, and user impact reliably? |
 
 ## Guardrails and operating assumptions
@@ -104,6 +104,7 @@ No single owned deliverable was assigned in the introduction. Confirm current ow
 - [[2026-09-29 - Daily sync - long context rollout and readiness]]
 - [[2026-09-30 - Functional test strategy review]]
 - [[2026-09-30 - Functional API compatibility matrix]]
+- [[2026-09-30 - Initial functional-testing sync with Tyler]]
 
 ### Repository anchors
 
