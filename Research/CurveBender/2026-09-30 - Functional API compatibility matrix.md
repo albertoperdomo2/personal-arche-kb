@@ -23,6 +23,19 @@ These tests use only a reachable endpoint and client credentials. They validate 
 
 The matrix is driven by declared client requirements. It does not equate every endpoint implemented by vLLM with a CurveBender release requirement.
 
+
+## Repository implementation status
+
+As inspected at functional-test repository commit `b0b02cacaeb8c3cd243f7e0d4080e0f0e061d9fa` (2026-09-28), the repository contains only:
+
+- the root README;
+- `src/kustomize-validation/README.md`;
+- the self-contained `validate-kustomize.py` renderer.
+
+The protocol matrix described here is **planned, not implemented**. GitHub issue 3 proposes a Python standard-library runner under `src/protocol-matrix/`, JSONL plus self-contained HTML reporting, a `core` CI subset, profiles, layer comparison, alerts, and a prober deployment.
+
+Statements below using “should” or “must” define the target contract. They do not describe behavior already present in the repository.
+
 ## Observed client contracts
 
 Read-only inspection of CurveBender tooling found two concrete production-shaped contracts and two evaluation contracts.
@@ -79,7 +92,7 @@ It consumes `message_start` usage and text, thinking, and partial-JSON deltas. T
 
 These tests are useful sources of fixtures and invariants. They should be incorporated or invoked rather than independently reimplemented without need.
 
-No current CurveBender client usage of `/v1/responses` or raw `/v1/completions` was found in the inspected client harnesses. Those surfaces remain conditional until a client profile requires them.
+No production application client implementation for `/v1/responses` or raw `/v1/completions` was found in the named Forge, tau2, or KVV client harnesses. However, `/v1/completions` is an active repository dependency in `rollouts-disagg-set/loadgen.py`, where it drives rollout and KV-transfer canaries. `/v1/responses` is referenced by the LiteLLM flow-control path and now has router prefix-scoring work in production. Treat Completions as required by the rollout-test contract and Responses as an infrastructure compatibility surface even before an external application client is registered.
 
 ## Matrix execution model
 
@@ -729,6 +742,8 @@ For the currently observed clients, the initial release gate should generate:
 | Claude Code-shaped Forge | Anthropic Messages | MSG-NS-001, MSG-ST-001, thinking when enabled, MSG-TOOL-001/002/003, MSG-COUNT-001, HDR-REQID/OBJ/FAIR/ANTH, core errors | router gateway; LiteLLM only if this surface is exposed; vLLM direct for attribution |
 | tau2 | Models + Chat Completions | DISC-001, CHAT-NS-001, TOOL-NS-001, TOOL-LOOP-001, SDK-OAI-001 | every ingress offered to tau2 |
 | KVV preflight | Chat Completions | streaming/non-streaming tools, TOOL-SCHEMA-001, FIELD-STRUCT-001, FIELD-USAGE-001, reasoning controls, malformed-request cases | candidate ingress used for evaluation |
+| Rollout probe | Completions | COMP-NS-001, request ID, usage, exact output-limit behavior, revision response header, corrupted/mismatched-KV canary | router gateway used by `rollouts-disagg-set` |
+| Router prefix scoring | Responses + render | RESP-NS/ST as enabled, RENDER-PREFIX-RESP-001, parser disposition, nonzero/shared-prefix scoring | direct vLLM and router gateway |
 
 “Core errors” means ERR-JSON, ERR-REQ, ERR-TYPE, ERR-MODEL, ERR-CONTEXT, ERR-AUTH where authentication applies, and ERR-PRESTREAM.
 
@@ -883,7 +898,9 @@ The first CLI milestone should execute:
 - HDR-REQID-001;
 - ERR-JSON-001, ERR-REQ-001, ERR-MODEL-001, and ERR-PRESTREAM-001.
 
-It should accept endpoint and credential overrides, select cases by client contract, emit JSON plus JUnit XML, redact secrets, and exit nonzero when a required case fails.
+It should accept endpoint and credential overrides, select cases by client contract, emit JSONL plus the self-contained HTML matrix specified in issue 3, redact secrets, and exit nonzero when a required case fails. JUnit XML is a useful optional CI adapter, but it is not part of the repository's current issue-3 output contract.
+
+This is the smallest first runnable slice within issue 3's broader first milestone. Issue 3 currently calls for all named surfaces plus a `core`-tagged subset; the core slice should land first without silently narrowing the milestone.
 
 ## Machine-readable report
 
@@ -922,7 +939,7 @@ Emit one record per generated cell:
 }
 ```
 
-Also produce JUnit XML for CI and a summary grouped by client, ingress, surface, and failure class.
+Produce the JSONL artifact and self-contained HTML matrix required by issue 3, grouped by client, ingress, surface, and failure class. A JUnit XML exporter may be added for CI systems that consume it.
 
 ## Acceptance criteria for the first implementation
 
