@@ -64,6 +64,7 @@ The local repository is [curvebender-tools](/Users/aperdomo/workspace/redhat/cur
 
 | Workstream | Current state on 2026-09-29 | Immediate question |
 | --- | --- | --- |
+| Prefix-cache reuse | GLM 5.3 prefill reuse was reported at 96% after fixing Claude Code reminder placement on Messages and volatile billing-header normalization on Chat Completions. Router-predicted and delivered reuse agreed within 0.1 percentage point. | Repeat under matched busy-hour load and add prompt-rendering prefix-stability regression tests. |
 | One-million-token context | PCP canary and KV events were validated and a rollout was in progress. Prefill capacity was reported as sufficient; decode capacity remained unknown. | What is the effective decode KV capacity, and what configuration safely supports the target context? |
 | HiCache / active-request CPU KV capacity | Reproduced on an SCC cluster without a node crash, but without an expected speedup; NIXL registration was much slower with it enabled. | Can it be validated on a Rocky H100 environment without reproducing the kernel panic? |
 | Production rollout | DisaggregatedSet rollout behavior was degrading prefix/KV-cache hit rate during live traffic. | How should revisions be rolled out without losing cache effectiveness or service quality? |
@@ -104,6 +105,7 @@ No single owned deliverable was assigned in the introduction. Confirm current ow
 - [[2026-09-29 - Daily sync - long context rollout and readiness]]
 - [[2026-09-30 - Functional test strategy review]]
 - [[2026-09-30 - Functional API compatibility matrix]]
+- [[2026-09-30 - GLM 5.3 prefix-cache reuse prompt-rendering fixes]]
 - [[2026-09-30 - Initial functional-testing sync with Tyler]]
 
 ### Repository anchors
