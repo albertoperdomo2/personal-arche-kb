@@ -826,6 +826,65 @@ Do not place captured credentials, webhook URLs, personal data, or proprietary p
 - Preserve response headers, status, event-type sequence, redacted body excerpts, and timing in failure artifacts.
 - Redact authorization and API-key headers at collection time.
 
+## Agreed implementation shape
+
+The initial sync with Tyler established these implementation constraints:
+
+- build a small Python package and CLI;
+- run it from a laptop, CI job, or Kubernetes Job/Pod against supplied endpoints;
+- keep scheduling outside the core runner;
+- do not build a controller or CRDs for the first version;
+- keep case definitions, transports, storage, and notifications modular so the suite can migrate toward llm-d-benchmark or llm-d Lens;
+- always write a portable local artifact bundle;
+- allow later result sinks for PVCs and object storage;
+- preserve the exact rendered manifests or an immutable manifest reference with every run;
+- provide a notifier interface so Slack or other alerts can be added without coupling them to case execution.
+
+The concrete coordination and operational decisions are recorded in [[2026-09-30 - Initial functional-testing sync with Tyler]].
+
+### Minimum Python package boundaries
+
+```text
+curvebender_functional_tests/
+  cli.py
+  profiles/
+  cases/
+    discovery.py
+    chat_completions.py
+    tools.py
+    messages.py
+    headers.py
+    errors.py
+  transports/
+    http.py
+    sse.py
+    openai_sdk.py
+    anthropic_sdk.py
+  assertions/
+  results/
+    model.py
+    local.py
+  notifications/
+    base.py
+  metadata/
+```
+
+This is a responsibility map, not a required filename layout. The key constraint is that test semantics must not depend on Kubernetes, a PVC, Slack, or one scheduler.
+
+### First runnable slice
+
+The first CLI milestone should execute:
+
+- DISC-001;
+- CHAT-NS-001;
+- CHAT-ST-001 and CHAT-ST-002;
+- TOOL-NS-001;
+- MSG-NS-001 and MSG-ST-001;
+- HDR-REQID-001;
+- ERR-JSON-001, ERR-REQ-001, ERR-MODEL-001, and ERR-PRESTREAM-001.
+
+It should accept endpoint and credential overrides, select cases by client contract, emit JSON plus JUnit XML, redact secrets, and exit nonzero when a required case fails.
+
 ## Machine-readable report
 
 Emit one record per generated cell:
