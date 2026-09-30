@@ -391,7 +391,7 @@ Destructive tests must be opt-in and run in an isolated namespace or designated 
 
 1. Define and validate the profile schema.
 2. Implement logical ingress clients.
-3. Add discovery, Chat Completions non-streaming/SSE, usage, basic errors, request IDs, and the deployed model's reasoning mode.
+3. Add discovery, Chat Completions non-streaming/SSE, usage, core unhappy paths, request IDs, and the deployed model's reasoning mode.
 4. Emit one machine-readable result per case with fleet, ingress, component versions, duration, status, and normalized failure class.
 5. Run the same cases directly and through the router/LiteLLM to localize failures.
 
@@ -407,7 +407,7 @@ Destructive tests must be opt-in and run in an isolated namespace or designated 
 
 **Exit criterion:** a 200 response through an unrecognized passthrough path is reported separately from a correctly parsed request.
 
-### Phase 3: system and unhappy paths
+### Phase 3: system and degraded-stack paths
 
 1. Add live stack conformance and observability checks.
 2. Add cancellation cleanup, saturation, rollout, and degraded-replica tests.
