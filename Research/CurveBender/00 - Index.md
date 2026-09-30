@@ -103,6 +103,7 @@ No single owned deliverable was assigned in the introduction. Confirm current ow
 - [[2026-09-28 - Project introduction and operating context]]
 - [[2026-09-29 - Daily sync - long context rollout and readiness]]
 - [[2026-09-30 - Functional test strategy review]]
+- [[2026-09-30 - Functional API compatibility matrix]]
 
 ### Repository anchors
 
