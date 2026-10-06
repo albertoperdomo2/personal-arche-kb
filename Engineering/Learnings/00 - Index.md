@@ -5,6 +5,7 @@ TILs, patterns, and gotchas that are worth keeping but aren't tied to a single i
 One file per learning keeps them searchable. Name them descriptively (e.g. `vLLM paged-attention memory math.md`).
 
 ## Learnings
+- [[active-request-scorer maxBusyScore defaults to 0 in llm-d-router v0.7.x]] — on router v0.7.0 to v0.8.x (RHOAI 3.4 / llm-d v0.6.0) an unset `maxBusyScore` becomes 0, so all busy pods tie and the scorer stops balancing load; set `maxBusyScore: 1.0`. Includes the RHOAI / llm-d / router version mapping and other pre-v0.9.0 scorer differences.
 - [[Arche Vega-Lite renderer guardrails]] — why valid charts can fail Arche's pre-render safety/feature guard, plus safe condition and composition workarounds.
 - [[BenchFlow distributed tracing - instrumentation, collection, metrics, and reports]] — how tracing is enabled, component instrumentation, OTel and Jaeger flow, artifact collection, metric provenance, the validated 23-series inventory, and the post-run MLflow report.
 - [[CephFS performance tuning for KV cache offloading]] — shareable, end-to-end CephFS tuning guide for vLLM KV-cache workloads, including OpenShift commands, manifests, validation, performance results, and rollback.
