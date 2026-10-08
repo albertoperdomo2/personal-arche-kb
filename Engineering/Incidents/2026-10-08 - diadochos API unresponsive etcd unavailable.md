@@ -2,7 +2,7 @@
 title: "2026-10-08 — diadochos API unresponsive: undersized masters overloaded by ~1,200 experiment pods, etcd quorum lost"
 date: 2026-10-08
 type: incident
-status: open
+status: resolved
 cluster: diadochos
 platform: IBM Cloud VPC (eu-de)
 ocp_version: 4.22.2
@@ -10,7 +10,7 @@ ocp_version: 4.22.2
 
 # 2026-10-08 — diadochos API unresponsive, etcd quorum repeatedly lost (control plane overload + master /var full)
 
-> **Status: OPEN at 10:23 UTC — API flapping. Disk-full condition fixed; experiment workload mostly removed; the two reachable masters still take turns stalling under load and master-1 has been down since 2026-10-07 17:35 UTC. No H100 node was lost or touched.**
+> **Status: RESOLVED at ~14:30 UTC — all 7 nodes Ready, etcd 3/3, zero degraded cluster operators, 450 pods (down from 1,709). No H100 node was lost or touched.**
 
 ## Symptom
 Every `oc` command against `https://api.diadochos.ibm.rhperfscale.org:6443` hangs or fails. Seen in this order of frequency:
@@ -51,8 +51,22 @@ Error from server (TooManyRequests): storage is (re)initializing
 - **~09:40** — master-2 answers again without any reboot (uptime unchanged). API back by 09:47; kube-apiserver on master-2 at 9.5 GB RSS, 385 MB free.
 - **09:50** — Deletion of `trace-replay` Jobs and agent Deployments starts (user-approved).
 - **~10:00** — master-0 stalls (load average 94). API down again; returns in short windows.
-- **10:07–10:14** — In the windows: all 500 Jobs deleted, 223+ of 300 agent Deployments deleted.
-- **10:22** — master-2 stalls again; master-0 recovered. API down. Deletion loop still retrying.
+- **10:07–10:32** — In the windows: all 500 Jobs deleted, all 300 agent Deployments deleted.
+- **~10:22–10:31** — master-2 stalls again; master-0 recovered. API down. Deletion loop still retrying.
+- **10:32** — All trace-replay Jobs and agent Deployments confirmed deleted.
+- **~11:06** — User reboots master-1 via IBM Cloud (`ibmcloud is instance-reboot diadochos-hqxzk-master-1 -f`).
+- **11:20** — All 7 nodes show Ready; master-1 back. 335 trace-replay pods still Terminating.
+- **12:40** — Kueue mutating and validating webhooks patched from `failurePolicy=Fail` to `Ignore` (39 webhooks total). Kueue controller had been crash-looping (173 restarts) with no ready endpoints, blocking all Deployment/Pod/StatefulSet/Job mutations cluster-wide — preventing ~12 cluster operators from reconciling.
+- **12:50** — Remaining 16 trace-replay backend deployments deleted. 292 openshell-tracesim Sandbox CRs deleted (`agents.x-k8s.io/v1beta1`). Remaining configmaps cleaned up.
+- **13:10** — master-2 rebooted via IBM Cloud (`ibmcloud is instance-reboot diadochos-hqxzk-master-2 -f`) — it had gone `Unknown` (same overload-stall pattern as master-1).
+- **~13:25** — master-2 back. All 7 nodes Ready, etcd 3/3 healthy.
+- **~13:35** — Degraded operators down to authentication, etcd, storage — all failing on DNS resolution ("server misbehaving" from 172.30.0.10:53).
+- **13:40** — Root-caused DNS failure: `br-ex` OVS bridge on master-0 had MTU 1500 (should be 9000 to match `ens3` jumbo frames). Pod-to-upstream-DNS traffic was silently dropped. Fixed via `sudo ovs-vsctl set interface br-ex mtu_request=9000`. OVN node pod restarted and reached 8/8 Ready.
+- **~14:00** — DNS working from all pods. All cluster operators recovered. Zero degraded.
+- **~14:05** — **All clear: 7/7 nodes Ready, etcd 3/3, 0 degraded COs, 450 pods.** Masters at load 0.75–3.63, disk 32–69%.
+- **~14:20** — etcd backup removed from master-2 (1.6 GB freed, disk 29%).
+- **~14:25** — Kueue controller confirmed stable (1/1 Ready, webhook endpoints ready). Webhooks restored to `failurePolicy=Fail`.
+- **~14:30** — br-ex MTU drift root-caused: NetworkManager profile `ovs-if-br-ex` on master-0 had `802-3-ethernet.mtu: 1500`. Fixed with `nmcli connection modify ovs-if-br-ex 802-3-ethernet.mtu 9000`. All 7 nodes verified at MTU 9000. **Incident closed.**
 
 ## Evidence
 
@@ -80,6 +94,27 @@ Overload evidence (08:00–10:22):
 | etcd on master-0 | `slow fdatasync` up to 1m24s; `leader is overloaded likely from slow disk` |
 | `oc adm top nodes` at 07:57 | master-2 memory 91%; H100 nodes 1–3% CPU, 3–6% memory |
 
+Kueue webhook blocker (discovered at 12:40):
+
+| Metric | Value |
+| --- | --- |
+| Kueue controller restarts | 173 in 15 hours (readiness probe 404, liveness probe connection refused) |
+| Webhooks with `failurePolicy=Fail` | 19 mutating + 20 validating = 39 |
+| Resources intercepted | pods, deployments, statefulsets, jobs, jobsets, rayjobs, pytorchjobs, etc. |
+| Operators blocked | monitoring, machine-api, openshift-controller-manager, console, csi-snapshot-controller, olm, openshift-apiserver, authentication, kube-apiserver, kube-controller-manager, kube-scheduler, machine-config |
+
+Master-0 br-ex MTU mismatch (discovered at 13:40):
+
+| Interface | master-0 (broken) | master-1 (correct) |
+| --- | --- | --- |
+| `ens3` | 9000 | 9000 |
+| `br-ex` (Linux) | **1500** | 9000 |
+| `br-ex` OVS `mtu_request` | **1500** | 9000 |
+| NM profile `ovs-if-br-ex` `802-3-ethernet.mtu` | **1500** | 9000 |
+| `br-ex` interface index | **211** (recreated many times) | 8 (clean boot) |
+
+Root cause: master-0 was the only node not rebooted during the incident. Repeated OVS bridge recreation during the instability (index 211 vs 8) caused the NM profile to lose the correct MTU. The OVN `configure-ovs` init script re-created the profile with default MTU 1500 instead of inheriting 9000 from `ens3`. OVN overlay MTU (8958) exceeds 1500, so `ovnkube-controller` refused to start, breaking pod-to-upstream-DNS on that node.
+
 ## Root Cause
 **Measured chain:**
 1. The control plane is three 4 vCPU / 20 GB masters. On 2026-10-07 an experiment added ~1,200 pods, 500 Jobs, 316 Deployments and ~2,000 ConfigMaps on two H100 nodes. kubelet opens a watch per mounted ConfigMap/Secret per pod, so those two kubelets became the heaviest API clients.
@@ -87,14 +122,18 @@ Overload evidence (08:00–10:22):
 3. Side effect: on a slow control plane the `downloads` pod (liveness `timeoutSeconds: 1`) restart-loops, and each start leaks ~3.1 GB into its emptyDir. That filled master-2's `/var` and killed its etcd — the first, hard outage.
 4. With master-1 already down, any single stall or failure of master-0 or master-2 costs etcd quorum.
 
-**Inference (not verified):** master-1 was lost on 10-07 17:35 by the same overload stall and never recovered.
+**Secondary blockers discovered during recovery:**
+5. Kueue's mutating and validating webhooks (39 total) were set to `failurePolicy=Fail` and intercepted pods, deployments, statefulsets, and jobs. With the kueue controller crash-looping, every Deployment create/update was rejected — blocking ~12 operators from reconciling their workloads.
+6. Master-0's `br-ex` OVS bridge had `mtu_request=1500` while `ens3` (jumbo frames) was 9000. OVN overlay MTU (8958) exceeds 1500, so the ovnkube-controller exited. Pods on master-0 couldn't reach upstream DNS (161.26.0.10/11), causing authentication, storage, and etcd operators to report degraded.
 
-**Not known:** why the 10-04 master reboots and the 10-05 H100 machine replacement happened; whether `openshell-tracesim` alone is still enough to overload the masters.
+**Not known:** why the 10-04 master reboots and the 10-05 H100 machine replacement happened.
 
 ## Resolution
-Applied so far (all user-approved):
 
-**1. Free master disks** (`ssh -J core@149.81.35.27 core@<ip>`; find the pod UID with `sudo du -xs /var/lib/kubelet/pods/* | sort -rn | head`):
+All steps user-approved.
+
+### 1. Free master disks
+(`ssh -J core@149.81.35.27 core@<ip>`; find the pod UID with `sudo du -xs /var/lib/kubelet/pods/* | sort -rn | head`):
 ```bash
 T='/var/lib/kubelet/pods/<downloads-pod-uid>/volumes/kubernetes.io~empty-dir/tmp'
 sudo cp -a /var/lib/etcd /var/home/core/etcd-backup-$(date +%Y%m%d)   # if etcd is stopped; free one dir first if the disk is 100% full
@@ -102,31 +141,49 @@ sudo find "$T" -mindepth 1 -maxdepth 1 -type d -name 'tmp*' ! -name <newest-dir>
 ```
 kubelet restarted etcd on master-2 by itself ~90 s later.
 
-> **Mistake made on master-2:** the command was run without `-mindepth 1`. The emptyDir is literally named `tmp`, so `-name 'tmp*'` matched the starting directory and the whole emptyDir was deleted, including `serve.py`. `downloads-55cff565b6-p7gj9` then crash-looped with `/tmp/serve.py: Permission denied` (fix: delete that pod). Impact limited to the console CLI-downloads page.
+> **Mistake made on master-2:** the command was run without `-mindepth 1`. The emptyDir is literally named `tmp`, so `-name 'tmp*'` matched the starting directory and the whole emptyDir was deleted, including `serve.py`. `downloads-55cff565b6-p7gj9` then crash-looped with `/tmp/serve.py: Permission denied`. Impact limited to the console CLI-downloads page. Pod was later GC'd and replaced. **Always use `-mindepth 1` when the base directory itself might match the pattern.**
 
-**2. Remove the experiment load** (in the short windows when the API answers; batches of 100, retried):
+### 2. Remove the experiment load
+In the short windows when the API answers; batches of 100, retried:
 ```bash
-oc get jobs -n trace-replay -l app=aharush-experiment -o name | head -100 | xargs oc delete -n trace-replay --wait=false
-oc get deploy -n trace-replay -o name | grep -E -- '-openclaw-[0-9]+$' | head -100 | xargs oc delete -n trace-replay --wait=false
+oc delete jobs --all -n trace-replay --wait=false
+oc delete deployments --all -n trace-replay --wait=false
+oc delete sandboxes.agents.x-k8s.io --all -n openshell-tracesim --wait=false
+oc delete configmaps --all -n trace-replay --wait=false
+oc delete job 5c7e068a-1-workspace-prep -n openshell-tracesim --wait=false
 ```
-Backends (`aharush-jaeger`, `aharush-mock-llm`, `aharush-*-backend`, `aharush-openclaw-shell`) left in place. `openshell-tracesim` not touched yet.
+All 500 Jobs, 316 Deployments, 292 Sandboxes, and ~1,984 ConfigMaps deleted. Pod count dropped from 1,709 to 450.
 
-Useful checks:
+### 3. Reboot hung masters
 ```bash
-oc get --raw '/livez/etcd'
-oc exec -n openshift-etcd etcd-diadochos-hqxzk-master-0 -c etcdctl -- etcdctl endpoint health --cluster
-oc get machinehealthcheck -A
-# on a master:
-uptime; free -m; ps -eo rss,pcpu,comm --sort=-rss | head; sudo crictl ps -a | grep -E ' (etcd|kube-apiserver) '
+ibmcloud is instance-reboot diadochos-hqxzk-master-1 -f   # user ran at ~11:06
+ibmcloud is instance-reboot diadochos-hqxzk-master-2 -f   # at 13:10
 ```
+Both recovered within 7–15 minutes. **Reboot only, never stop/start** — stop/start competes for on-demand capacity.
 
-### Still to do
-1. Finish deleting the remaining `trace-replay` agent Deployments; confirm pods are garbage-collected.
-2. Reboot master-1 from IBM Cloud (`ibmcloud is instance-reboot diadochos-hqxzk-master-1` — reboot, never stop/start) to get a third apiserver and etcd member.
-3. If the masters still stall: remove `openshell-tracesim` sandboxes.
-4. Delete the broken `downloads-55cff565b6-p7gj9` pod.
-5. Remove `/var/home/core/etcd-backup-20261008` on master-2 when no longer needed.
-6. Review degraded cluster operators once stable.
+### 4. Patch kueue webhooks
+```bash
+# For both mutating and validating:
+oc get mutatingwebhookconfigurations kueue-mutating-webhook-configuration -o json \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); [wh.__setitem__('failurePolicy','Ignore') for wh in d['webhooks']]; print(json.dumps(d))" \
+  | oc replace -f -
+# Same for validatingwebhookconfigurations kueue-validating-webhook-configuration
+```
+This unblocked 12 operators within minutes. After kueue stabilized (~30 min later, 1/1 Ready with ready endpoints), webhooks were restored to `failurePolicy=Fail`.
+
+### 5. Fix br-ex MTU on master-0
+```bash
+ssh -J core@149.81.35.27 core@10.243.0.6
+# Fix OVS database (immediate effect):
+sudo ovs-vsctl set interface br-ex mtu_request=9000
+# Fix NetworkManager profile (persistent across bridge recreation):
+sudo nmcli connection modify ovs-if-br-ex 802-3-ethernet.mtu 9000
+```
+Then delete the OVN node pod on master-0 to force re-initialization with the correct MTU. Pod networking and upstream DNS resolution restored.
+
+### 6. Cleanup
+- etcd backup `/var/home/core/etcd-backup-20261008` removed from master-2 (1.6 GB freed).
+- All 7 nodes verified at br-ex MTU 9000 (both OVS and NM profile).
 
 ## Safety constraints used
 - Never stop/start/reboot an H100 instance from IBM Cloud — no reservation, may not restart (see [[2026-07-17 - IBM Cloud H100 node failed cannot_start_capacity on diadochos]]).
@@ -137,13 +194,14 @@ uptime; free -m; ps -eo rss,pcpu,comm --sort=-rss | head; sudo crictl ps -a | gr
 - A master that is unreachable but `running` in IBM Cloud may be thrashing, not dead — master-2 recovered without a reboot twice.
 
 ## Prevention / Runbook
-_To be completed after full resolution._ Candidates:
-- **Resize the masters.** 4 vCPU / 20 GB cannot carry ~1,700 pods; this is the underlying cause. Needs a planned, one-at-a-time stop/resize/start.
+- **Resize the masters.** 4 vCPU / 20 GB cannot carry ~1,700 pods; this is the underlying cause. Next size up is `bx3d-8x40` (8 vCPU / 40 GB). Needs a planned, one-at-a-time stop/resize/start.
 - Cap experiment scale: namespace `ResourceQuota` on pods/configmaps for large agent experiments; keep per-node pod counts far below 600–750.
 - Alert on master `/var` usage, master memory and etcd fsync latency.
 - Bound the downloads pod's disk use (ephemeral-storage limit / emptyDir `sizeLimit`), if console-operator allows it.
 - Faster boot-volume profile for masters (etcd reports slow fdatasync on 3000 IOPS general-purpose).
 - Keep a documented SSH path to the masters; the leftover bootstrap VM was the only way in.
+- **Set kueue webhooks to `failurePolicy=Ignore`** or add a `namespaceSelector` excluding system namespaces — a crash-looping admission webhook with `Fail` policy blocks the entire cluster.
+- **Monitor br-ex MTU on all nodes** — if it drifts from the physical interface MTU (9000 on IBM Cloud VPC jumbo frames), pod networking silently breaks. The NM profile `ovs-if-br-ex` `802-3-ethernet.mtu` is the persistent source of truth; the OVS `mtu_request` is the runtime value.
 
 ## Related
 - [[2026-07-17 - IBM Cloud H100 node failed cannot_start_capacity on diadochos]]
